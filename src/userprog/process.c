@@ -51,6 +51,9 @@ void userprog_init(void) {
 pid_t process_execute(const char* file_name) {
   char* fn_copy;
   tid_t tid;
+  int prog_name_len = strcspn(file_name, " ");
+  char prog_name[prog_name_len + 1]; // Program name.
+  strlcpy(prog_name, file_name, prog_name_len + 1);
 
   sema_init(&temporary, 0);
   /* Make a copy of FILE_NAME.
@@ -61,7 +64,7 @@ pid_t process_execute(const char* file_name) {
   strlcpy(fn_copy, file_name, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create(prog_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page(fn_copy);
   return tid;
@@ -261,6 +264,7 @@ static bool setup_stack(void** esp);
 static bool validate_segment(const struct Elf32_Phdr*, struct file*);
 static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t read_bytes,
                          uint32_t zero_bytes, bool writable);
+static void parse_args(const char* filename, void** esp);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
@@ -273,6 +277,9 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   off_t file_ofs;
   bool success = false;
   int i;
+  int prog_name_len = strcspn(file_name, " ");
+  char prog_name[prog_name_len + 1]; // Program name.
+  strlcpy(prog_name, file_name, prog_name_len + 1);
 
   /* Allocate and activate page directory. */
   t->pcb->pagedir = pagedir_create();
@@ -281,9 +288,9 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   process_activate();
 
   /* Open executable file. */
-  file = filesys_open(file_name);
+  file = filesys_open(prog_name);
   if (file == NULL) {
-    printf("load: %s: open failed\n", file_name);
+    printf("load: %s: open failed\n", prog_name);
     goto done;
   }
 
@@ -291,7 +298,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr ||
       memcmp(ehdr.e_ident, "\177ELF\1\1\1", 7) || ehdr.e_type != 2 || ehdr.e_machine != 3 ||
       ehdr.e_version != 1 || ehdr.e_phentsize != sizeof(struct Elf32_Phdr) || ehdr.e_phnum > 1024) {
-    printf("load: %s: error loading executable\n", file_name);
+    printf("load: %s: error loading executable\n", prog_name);
     goto done;
   }
 
@@ -348,6 +355,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   /* Set up stack. */
   if (!setup_stack(esp))
     goto done;
+  parse_args(file_name, esp);
 
   /* Start address. */
   *eip = (void (*)(void))ehdr.e_entry;
@@ -363,6 +371,48 @@ done:
 /* load() helpers. */
 
 static bool install_page(void* upage, void* kpage, bool writable);
+
+/* Parse the filename for command line arguments,
+   then push them onto the stack appropriately. */
+void parse_args(const char* filename, void** esp)
+{
+  // push strings in forward order (easiest to implement)
+  int argc = 0;
+  char* save_ptr = NULL;
+  char* token;
+  for(token = strtok_r(filename, " ", &save_ptr); 
+      token != NULL; token = strtok_r(NULL, " ", &save_ptr))  // see lib/string.c:strtok_r()
+  {
+    int len = strlen(token);
+    *esp -= (len + 1);
+    strlcpy(*esp, token, len + 1);
+    argc++;
+  }
+
+  // push argv[0...argc]
+  char** argv_start = *esp - sizeof(char*) * (argc + 1);
+  size_t cur_length = 0;
+  for(int i = argc - 1; i >= 0; i--)
+  {
+    argv_start[i] = *esp + cur_length;
+    cur_length += strlen(*esp + cur_length) + 1;
+  }
+  argv_start[argc] = NULL;
+  *esp = argv_start;
+
+  // push padding
+  size_t pad_size = ((unsigned int)argv_start - sizeof(char**) - sizeof(int)) % 16;
+  *esp -= pad_size;
+  memset(*esp, 0, pad_size); // may not be needed
+
+  // push argv, argc, fake return addr
+  *esp -= sizeof(char**);
+  *(char***)*esp = argv_start;
+  *esp -= sizeof(int);
+  *(int*)*esp = argc;
+  *esp -= 4;
+  *(int*)*esp = 0;
+}
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */

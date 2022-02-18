@@ -26,4 +26,12 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     printf("%s: exit(%d)\n", thread_current()->pcb->process_name, args[1]);
     process_exit();
   }
+  else if(args[0] == SYS_WRITE)
+  {
+    // TODO: temporary implementation. Add validation + support for arbitrary fd later.
+    if(args[1] == STDOUT_FILENO)
+    {
+      printf("%.*s", (unsigned int) args[3], (char*) args[2]);
+    }
+  }
 }
