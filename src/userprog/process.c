@@ -22,7 +22,7 @@
 
 static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
-static bool load(const char* file_name, void (**eip)(void), void** esp);
+static bool load(char* file_name, void (**eip)(void), void** esp);
 
 /* Initializes user programs in the system by ensuring the main
    thread has a minimal PCB so that it can execute and wait for
@@ -264,13 +264,13 @@ static bool setup_stack(void** esp);
 static bool validate_segment(const struct Elf32_Phdr*, struct file*);
 static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t read_bytes,
                          uint32_t zero_bytes, bool writable);
-static void parse_args(const char* filename, void** esp);
+static void parse_args(char* filename, void** esp);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
-bool load(const char* file_name, void (**eip)(void), void** esp) {
+bool load(char* file_name, void (**eip)(void), void** esp) {
   struct thread* t = thread_current();
   struct Elf32_Ehdr ehdr;
   struct file* file = NULL;
@@ -374,7 +374,7 @@ static bool install_page(void* upage, void* kpage, bool writable);
 
 /* Parse the filename for command line arguments,
    then push them onto the stack appropriately. */
-void parse_args(const char* filename, void** esp)
+void parse_args(char* filename, void** esp)
 {
   // push strings in forward order (easiest to implement)
   int argc = 0;
