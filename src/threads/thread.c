@@ -210,6 +210,10 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
   thread_unblock(t);
 
   return tid;
+
+  /* discuss:
+    when thread to execute thread_func is created, it has the same pid as the process that will be created
+    so use this id in start_process to set pcb of new process's pointer to struct */
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled
