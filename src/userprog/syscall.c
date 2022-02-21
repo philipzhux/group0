@@ -12,7 +12,7 @@ static void syscall_handler(struct intr_frame*);
 bool validate_single(void* addr);
 bool validate_args(void* addr, size_t size);
 bool validate_str(void* ptr);
-
+void validate_fail(struct intr_frame*);
 void syscall_init(void) { intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall"); }
 
 static void syscall_handler(struct intr_frame* f UNUSED) {
@@ -20,7 +20,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
   /*
    * The following print statement, if uncommented, will print out the syscall
-   * number whenever a process enters a system call. You might find it useful
+   * number whenever a process enters a systemst call. You might find it useful
    * when debugging. It will cause tests to fail, however, so you should not
    * include it in your final submission.
    */
@@ -29,12 +29,14 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   
   // validate esp
   if(!validate_args((f->esp), sizeof(uint32_t))) {
-      f->eax = -1;
-      printf("%s: exit(%d)\n", thread_current()->pcb->process_name, -1);
-      process_exit();
+      validate_fail(f);
   }
 
   if (args[0] == SYS_EXIT) {
+    if (!validate_args(&args[1], sizeof(uint32_t))) {
+        validate_fail(f);
+    }
+    
     f->eax = args[1];
     printf("%s: exit(%d)\n", thread_current()->pcb->process_name, args[1]);
     process_exit();
@@ -55,7 +57,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 }
 
 bool validate_single(void* addr) {
-  if(addr > PHYS_BASE) return false;
+  if(addr >= PHYS_BASE) return false;
   /* translate addr into page table entry */
   uint32_t* current_pd = active_pd();
   void* pg = pagedir_get_page(current_pd, addr);
@@ -73,12 +75,18 @@ bool validate_args(void* addr, size_t size) {
 }
 
 bool validate_str(void* ptr) {
-    char* s = (char *) ptr;
-    while(1) {
-        if (!validate_single(s)) {
-            return false;
-        } else if (*(s++) == '\0') {
-            return true;
-        }
+  char* s = (char *) ptr;
+  while(1) {
+    if (!validate_single(s)) {
+      return false;
+    } else if (*(s++) == '\0') {
+      return true;
     }
+  }
+}
+
+void validate_fail(struct intr_frame* f) {
+  f->eax = -1;
+  printf("%s: exit(%d)\n", thread_current()->pcb->process_name, -1);
+  process_exit();
 }
