@@ -7,11 +7,12 @@
 #include "threads/vaddr.h"
 #include "pagedir.h"
 #include "threads/pte.h"
+#include "threads/malloc.h"
 
 static void syscall_handler(struct intr_frame*);
 bool validate_single(void* addr);
 bool validate_args(void* addr, size_t size);
-bool validate_str(void* ptr);
+bool validate_str(char* ptr);
 void validate_fail(struct intr_frame*);
 void syscall_init(void) { intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall"); }
 
@@ -29,14 +30,24 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   
   // validate esp
   if(!validate_args((f->esp), sizeof(uint32_t))) {
-      validate_fail(f);
+    validate_fail(f);
   }
 
   if (args[0] == SYS_EXIT) {
     if (!validate_args(&args[1], sizeof(uint32_t))) {
-        validate_fail(f);
+      validate_fail(f);
     }
-    
+
+    struct list* child_list = thread_current()->pcb->child_status_list;
+    for (struct list_elem* e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
+        proc_status_t * status = list_entry(e, proc_status_t, elem);
+        release_proc_status(status, true);
+    }
+    free(child_list);
+    release_proc_status(thread_current()->pcb->own_status, false);
+    thread_current()->pcb->own_status->exit_status = args[1];
+    sema_up(&thread_current()->pcb->own_status->wait_sema);
+
     f->eax = args[1];
     printf("%s: exit(%d)\n", thread_current()->pcb->process_name, args[1]);
     process_exit();
@@ -50,7 +61,19 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     } 
   }
   else if (args[0] == SYS_PRACTICE) {
-      f->eax = args[1] + 1;
+    if (!validate_args(&args[1], sizeof(uint32_t))) {
+      validate_fail(f);
+    }
+    f->eax = args[1] + 1;
+  }
+  else if (args[0] == SYS_EXEC) {
+    if (!validate_args(&args[1], sizeof(uint32_t))) {
+      validate_fail(f);
+    }
+    if (!validate_str((char *) args[1])) {
+      validate_fail(f);
+    }
+    f->eax = process_execute((char *) args[1]);
   }
 
   
@@ -74,12 +97,11 @@ bool validate_args(void* addr, size_t size) {
   return true;
 }
 
-bool validate_str(void* ptr) {
-  char* s = (char *) ptr;
+bool validate_str(char* ptr) {
   while(1) {
-    if (!validate_single(s)) {
+    if (!validate_single((void*)ptr)) {
       return false;
-    } else if (*(s++) == '\0') {
+    } else if (*(ptr++) == '\0') {
       return true;
     }
   }

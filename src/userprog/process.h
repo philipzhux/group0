@@ -17,6 +17,20 @@ typedef tid_t pid_t;
 typedef void (*pthread_fun)(void*);
 typedef void (*stub_fun)(pthread_fun, void*);
 
+
+typedef struct proc_status
+{
+  struct list_elem elem;  // PintOS list construct
+  pid_t pid;              // PID of the process
+  struct process* parent_pcb; // PCB of parent
+  int exit_status;        // Exit status of the process
+  int ref_count;          // # of references to this struct
+  struct lock ref_lock;          // lock for ref_count
+  struct semaphore wait_sema;    // synchronization for parent/child in exec() and wait()
+} proc_status_t;
+
+
+
 /* The process control block for a given process. Since
    there can be multiple threads per process, we need a separate
    PCB from the TCB. All TCBs in a process will have a pointer
@@ -27,7 +41,15 @@ struct process {
   uint32_t* pagedir;          /* Page directory. */
   char process_name[16];      /* Name of the main thread */
   struct thread* main_thread; /* Pointer to main thread */
+  struct list* child_status_list;
+  proc_status_t* own_status;
 };
+
+
+typedef struct thread_init {
+    proc_status_t* status_ptr;
+    char* file_name;
+} thread_init_t;
 
 void userprog_init(void);
 
@@ -38,5 +60,5 @@ void process_activate(void);
 
 bool is_main_thread(struct thread*, struct process*);
 pid_t get_pid(struct process*);
-
+void release_proc_status(proc_status_t* status, bool parent);
 #endif /* userprog/process.h */

@@ -20,7 +20,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
-static struct semaphore temporary;
+//static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load(char* file_name, void (**eip)(void), void** esp);
 
@@ -42,6 +42,8 @@ void userprog_init(void) {
 
   /* Kill the kernel if we did not succeed */
   ASSERT(success);
+  t->pcb->child_status_list = (struct list *) malloc(sizeof(struct list));
+  list_init(t->pcb->child_status_list);
 }
 
 /* Starts a new thread running a user program loaded from
@@ -54,26 +56,50 @@ pid_t process_execute(const char* file_name) {
   int prog_name_len = strcspn(file_name, " ");
   char prog_name[prog_name_len + 1]; // Program name.
   strlcpy(prog_name, file_name, prog_name_len + 1);
+  
+  proc_status_t* status_ptr = (proc_status_t*)malloc(sizeof(proc_status_t));
+  status_ptr->pid = -1;
+  status_ptr->parent_pcb = thread_current()->pcb;
+  sema_init(&(status_ptr->wait_sema), 0);
+  lock_init(&(status_ptr->ref_lock));
+  status_ptr->ref_count = 2;
+  thread_init_t* attr = (thread_init_t *)malloc(sizeof(thread_init));
 
-  sema_init(&temporary, 0);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page(0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
+  
+  attr->file_name = fn_copy;
+  attr->status_ptr = status_ptr;
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create(prog_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create(prog_name, PRI_DEFAULT, start_process, attr);
   if (tid == TID_ERROR)
     palloc_free_page(fn_copy);
+
+  // wait for child to load
+  sema_down(&status_ptr->wait_sema);
+  int pid = status_ptr->pid;
+  free(attr); // attr no longer in use
+  if(pid == -1) {
+    /* loading child fails
+    need to clean up the status struct for the "expected" child */
+    free(status_ptr);
+    return -1;
+  }
+  // add child to list
+  list_push_back(thread_current()->pcb->child_status_list, &status_ptr->elem);
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
-static void start_process(void* file_name_) {
-  char* file_name = (char*)file_name_;
+static void start_process(void* attr_) {
+  thread_init_t* attr = (thread_init_t*) attr_;
+  char* file_name = attr->file_name;
   struct thread* t = thread_current();
   struct intr_frame if_;
   bool success, pcb_success;
@@ -112,11 +138,19 @@ static void start_process(void* file_name_) {
     t->pcb = NULL;
     free(pcb_to_free);
   }
-
+  
+  if(success) {
+    attr->status_ptr->pid = t->tid;
+    t->pcb->own_status = attr->status_ptr;
+    t->pcb->child_status_list = (struct list *) malloc(sizeof(struct list));
+    list_init(t->pcb->child_status_list);
+  }
+  
+  sema_up(&(attr->status_ptr->wait_sema));
   /* Clean up. Exit on failure or jump to userspace */
   palloc_free_page(file_name);
   if (!success) {
-    sema_up(&temporary);
+    //sema_up(&temporary);
     thread_exit();
   }
 
@@ -140,7 +174,7 @@ static void start_process(void* file_name_) {
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int process_wait(pid_t child_pid UNUSED) {
-  sema_down(&temporary);
+  //sema_down(&temporary);
   return 0;
 }
 
@@ -179,7 +213,7 @@ void process_exit(void) {
   cur->pcb = NULL;
   free(pcb_to_free);
 
-  sema_up(&temporary);
+//   sema_up(&temporary);
   thread_exit();
 }
 
@@ -280,6 +314,7 @@ bool load(char* file_name, void (**eip)(void), void** esp) {
   int prog_name_len = strcspn(file_name, " ");
   char prog_name[prog_name_len + 1]; // Program name.
   strlcpy(prog_name, file_name, prog_name_len + 1);
+  // prog_name[prog_name_len] = '\0';
 
   /* Allocate and activate page directory. */
   t->pcb->pagedir = pagedir_create();
@@ -551,3 +586,17 @@ bool is_main_thread(struct thread* t, struct process* p) { return p->main_thread
 
 /* Gets the PID of a process */
 pid_t get_pid(struct process* p) { return (pid_t)p->main_thread->tid; }
+
+void release_proc_status(proc_status_t* status, bool parent)
+{
+  int should_free;
+  lock_acquire(&(status->ref_lock));
+  status->ref_count -= 1;
+  should_free = (status->ref_count == 0);
+  lock_release(&(status->ref_lock));
+  if(should_free) {
+    // free stuff in proc_status
+    if(parent) list_remove(&status->elem);
+    free(status); 
+  }
+}
