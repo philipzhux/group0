@@ -44,9 +44,9 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
         release_proc_status(status, true);
     }
     free(child_list);
-    release_proc_status(thread_current()->pcb->own_status, false);
     thread_current()->pcb->own_status->exit_status = args[1];
     sema_up(&thread_current()->pcb->own_status->wait_sema);
+    release_proc_status(thread_current()->pcb->own_status, false);
 
     f->eax = args[1];
     printf("%s: exit(%d)\n", thread_current()->pcb->process_name, args[1]);
