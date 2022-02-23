@@ -20,7 +20,6 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
-static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load(char* file_name, void (**eip)(void), void** esp);
 
@@ -59,7 +58,6 @@ pid_t process_execute(const char* file_name) {
   int prog_name_len = strcspn(file_name, " ");
   char prog_name[prog_name_len + 1]; // Program name.
   strlcpy(prog_name, file_name, prog_name_len + 1);
-  sema_init(&temporary, 0);
   
   proc_status_t* status_ptr = (proc_status_t*)malloc(sizeof(proc_status_t));
   status_ptr->pid = -1;
@@ -157,7 +155,6 @@ static void start_process(void* attr_) {
   /* Clean up. Exit on failure or jump to userspace */
   palloc_free_page(file_name);
   if (!success) {
-    sema_up(&temporary);
     thread_exit();
   }
 
@@ -266,7 +263,6 @@ void process_exit(int status){
   cur->pcb = NULL;
   free(pcb_to_free);
 
-  sema_up(&temporary);
   thread_exit();
 }
 
