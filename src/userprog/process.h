@@ -1,8 +1,10 @@
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
 
-#include "threads/thread.h"
 #include <stdint.h>
+#include <list.h>
+#include "threads/thread.h"
+#include "filesys/file.h"
 
 // At most 8MB can be allocated to the stack
 // These defines will be used in Project 2: Multithreading
@@ -30,6 +32,13 @@ typedef struct proc_status
 } proc_status_t;
 
 
+typedef struct file_desc
+{
+  struct list_elem elem;  // PintOS list construct.
+  int fd;                 // file descriptor number.
+  struct file* file;      // file pointer to call library functions.
+} file_desc_t;
+
 
 /* The process control block for a given process. Since
    there can be multiple threads per process, we need a separate
@@ -43,8 +52,10 @@ struct process {
   struct thread* main_thread; /* Pointer to main thread */
   struct list* child_status_list;
   proc_status_t* own_status;
+  struct list* file_desc_list; /* Pointer to list of file descriptions. */
+  uint32_t file_desc_count; /* Starts at 2, and increases when files are opened. */
+  struct file* exec_file; /* File pointer to currently executing file. */
 };
-
 
 typedef struct thread_init {
     proc_status_t* status_ptr;

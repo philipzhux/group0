@@ -23,6 +23,7 @@
 #include "threads/palloc.h"
 #include "threads/pte.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "userprog/exception.h"
@@ -40,6 +41,8 @@
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
 #endif
+
+extern struct lock file_lock;
 
 /* Page directory with kernel mappings only. */
 uint32_t* init_page_dir;
@@ -112,6 +115,7 @@ int main(void) {
   exception_init();
   syscall_init();
 #endif
+  lock_init(&file_lock);
 
   /* Start thread scheduler and enable interrupts. */
   thread_start();
