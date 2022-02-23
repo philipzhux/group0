@@ -20,7 +20,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
-//static struct semaphore temporary;
+static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load(char* file_name, void (**eip)(void), void** esp);
 
@@ -42,6 +42,7 @@ void userprog_init(void) {
 
   /* Kill the kernel if we did not succeed */
   ASSERT(success);
+
   t->pcb->child_status_list = (struct list *) malloc(sizeof(struct list));
   list_init(t->pcb->child_status_list);
 }
@@ -56,6 +57,7 @@ pid_t process_execute(const char* file_name) {
   int prog_name_len = strcspn(file_name, " ");
   char prog_name[prog_name_len + 1]; // Program name.
   strlcpy(prog_name, file_name, prog_name_len + 1);
+  sema_init(&temporary, 0);
   
   proc_status_t* status_ptr = (proc_status_t*)malloc(sizeof(proc_status_t));
   status_ptr->pid = -1;
@@ -150,7 +152,7 @@ static void start_process(void* attr_) {
   /* Clean up. Exit on failure or jump to userspace */
   palloc_free_page(file_name);
   if (!success) {
-    //sema_up(&temporary);
+    sema_up(&temporary);
     thread_exit();
   }
 
@@ -173,13 +175,32 @@ static void start_process(void* attr_) {
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait(pid_t child_pid UNUSED) {
-  //sema_down(&temporary);
-  return 0;
+int process_wait(pid_t child_pid) {
+  struct process * pcb = thread_current()->pcb;
+  struct list * lst = pcb->child_status_list;
+  struct list_elem* e;
+  proc_status_t* status = NULL;
+  int exit_status = -1;
+  
+  for(e = list_begin (lst); e != list_end(lst); e = list_next(e))
+  {
+    proc_status_t* tmp = list_entry(e, proc_status_t, elem);
+    if (tmp->pid == child_pid) {
+      status = tmp;
+      break;
+    }
+  }
+  if (status == NULL) {
+    return exit_status;
+  }
+  sema_down(&status->wait_sema);
+  exit_status = status->exit_status;
+  release_proc_status(status, true);
+  return exit_status;
 }
 
 /* Free the current process's resources. */
-void process_exit(void) {
+void process_exit(int status){
   struct thread* cur = thread_current();
   uint32_t* pd;
 
@@ -189,17 +210,28 @@ void process_exit(void) {
     NOT_REACHED();
   }
 
+  // clean up proc_status
+  struct list* child_list = cur->pcb->child_status_list;
+  for (struct list_elem* e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
+      proc_status_t * status = list_entry(e, proc_status_t, elem);
+      release_proc_status(status, true);
+  }
+  free(child_list);
+  cur->pcb->own_status->exit_status = status;
+  sema_up(&cur->pcb->own_status->wait_sema);
+  release_proc_status(cur->pcb->own_status, false);
+  printf("%s: exit(%d)\n", thread_current()->pcb->process_name, status);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pcb->pagedir;
   if (pd != NULL) {
     /* Correct ordering here is crucial.  We must set
-         cur->pcb->pagedir to NULL before switching page directories,
-         so that a timer interrupt can't switch back to the
-         process page directory.  We must activate the base page
-         directory before destroying the process's page
-         directory, or our active page directory will be one
-         that's been freed (and cleared). */
+      cur->pcb->pagedir to NULL before switching page directories,
+      so that a timer interrupt can't switch back to the
+      process page directory.  We must activate the base page
+      directory before destroying the process's page
+      directory, or our active page directory will be one
+      that's been freed (and cleared). */
     cur->pcb->pagedir = NULL;
     pagedir_activate(NULL);
     pagedir_destroy(pd);
@@ -213,7 +245,7 @@ void process_exit(void) {
   cur->pcb = NULL;
   free(pcb_to_free);
 
-//   sema_up(&temporary);
+  sema_up(&temporary);
   thread_exit();
 }
 
