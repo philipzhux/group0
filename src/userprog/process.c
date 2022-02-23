@@ -20,7 +20,6 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
-static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load(char* file_name, void (**eip)(void), void** esp);
 
@@ -45,6 +44,8 @@ void userprog_init(void) {
 
   t->pcb->child_status_list = (struct list *) malloc(sizeof(struct list));
   list_init(t->pcb->child_status_list);
+  t->pcb->file_desc_list = (struct list *) malloc(sizeof(struct list));
+  list_init(t->pcb->file_desc_list);
 }
 
 /* Starts a new thread running a user program loaded from
@@ -57,7 +58,6 @@ pid_t process_execute(const char* file_name) {
   int prog_name_len = strcspn(file_name, " ");
   char prog_name[prog_name_len + 1]; // Program name.
   strlcpy(prog_name, file_name, prog_name_len + 1);
-  sema_init(&temporary, 0);
   
   proc_status_t* status_ptr = (proc_status_t*)malloc(sizeof(proc_status_t));
   status_ptr->pid = -1;
@@ -130,7 +130,7 @@ static void start_process(void* attr_) {
     if_.eflags = FLAG_IF | FLAG_MBS;
     success = load(file_name, &if_.eip, &if_.esp);
   }
-
+  
   /* Handle failure with succesful PCB malloc. Must free the PCB */
   if (!success && pcb_success) {
     // Avoid race where PCB is freed before t->pcb is set to NULL
@@ -145,14 +145,16 @@ static void start_process(void* attr_) {
     attr->status_ptr->pid = t->tid;
     t->pcb->own_status = attr->status_ptr;
     t->pcb->child_status_list = (struct list *) malloc(sizeof(struct list));
+    t->pcb->file_desc_list = (struct list *) malloc(sizeof(struct list));
     list_init(t->pcb->child_status_list);
+    list_init(t->pcb->file_desc_list);
+    t->pcb->file_desc_count = 2;
   }
   
   sema_up(&(attr->status_ptr->wait_sema));
   /* Clean up. Exit on failure or jump to userspace */
   palloc_free_page(file_name);
   if (!success) {
-    sema_up(&temporary);
     thread_exit();
   }
 
@@ -210,17 +212,33 @@ void process_exit(int status){
     NOT_REACHED();
   }
 
-  // clean up proc_status
+  // clean up child_status_list
   struct list* child_list = cur->pcb->child_status_list;
   for (struct list_elem* e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
       proc_status_t * status = list_entry(e, proc_status_t, elem);
       release_proc_status(status, true);
   }
   free(child_list);
+
+  // clean up file_desc_list
+  struct list* file_list = cur->pcb->file_desc_list;
+  if(!list_empty(file_list)) {
+    file_desc_t* prev = list_entry(list_begin(file_list), file_desc_t, elem);
+    for (struct list_elem* e = list_next(list_begin(file_list)); e != list_end(file_list); e = list_next(e)) {
+        free(prev);
+        prev = list_entry(e, file_desc_t, elem);
+    }
+    free(prev);
+  }
+  free(cur->pcb->file_desc_list);
+
+  file_close(cur->pcb->exec_file);
+  //set own exit status
   cur->pcb->own_status->exit_status = status;
   sema_up(&cur->pcb->own_status->wait_sema);
   release_proc_status(cur->pcb->own_status, false);
-  printf("%s: exit(%d)\n", thread_current()->pcb->process_name, status);
+  printf("%s: exit(%d)\n", cur->pcb->process_name, status);
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pcb->pagedir;
@@ -245,7 +263,6 @@ void process_exit(int status){
   cur->pcb = NULL;
   free(pcb_to_free);
 
-  sema_up(&temporary);
   thread_exit();
 }
 
@@ -360,6 +377,8 @@ bool load(char* file_name, void (**eip)(void), void** esp) {
     printf("load: %s: open failed\n", prog_name);
     goto done;
   }
+  t->pcb->exec_file = file;
+  file_deny_write(file);
 
   /* Read and verify executable header. */
   if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr ||
@@ -431,7 +450,7 @@ bool load(char* file_name, void (**eip)(void), void** esp) {
 
 done:
   /* We arrive here whether the load is successful or not. */
-  file_close(file);
+  if(!success) {file_close(file);}
   return success;
 }
 
