@@ -89,9 +89,11 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     }
     f->eax = -1;
     struct process *pcb = thread_current()->pcb;
+
     lock_acquire(&file_lock);
     struct file* file_ptr = filesys_open((char *) args[1]);
     lock_release(&file_lock);
+
     if(file_ptr) {
       file_desc_t *fdesc  = (file_desc_t *) malloc(sizeof(file_desc_t));
       fdesc->fd = pcb->file_desc_count++;
@@ -128,7 +130,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     
     list_remove(&filedesc->elem);
 
-   
   } else if (args[0] == SYS_FILESIZE) {
      if (!validate_args(&args[1], sizeof(int))) {
       validate_fail(f);
@@ -220,9 +221,11 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       f->eax = -1;
       return;
     }
+
     lock_acquire(&file_lock);
     f->eax = file_tell(filedesc->file);
     lock_release(&file_lock);
+
   }
 }
 
@@ -260,13 +263,13 @@ void validate_fail(struct intr_frame* f) {
 }
 
 file_desc_t* find_file(struct process *pcb, int fd) {
-   file_desc_t* filedesc = NULL;
-    for (struct list_elem* e = list_begin(pcb->file_desc_list); e != list_end(pcb->file_desc_list); e = list_next(e)) {
-      file_desc_t *tmp = list_entry(e, file_desc_t, elem);
-      if (tmp->fd == fd) {
-        filedesc = tmp;
-        break;
-      }
+  file_desc_t* filedesc = NULL;
+  for (struct list_elem* e = list_begin(pcb->file_desc_list); e != list_end(pcb->file_desc_list); e = list_next(e)) {
+    file_desc_t *tmp = list_entry(e, file_desc_t, elem);
+    if (tmp->fd == fd) {
+      filedesc = tmp;
+      break;
     }
-    return filedesc;
+  }
+  return filedesc;
 }
