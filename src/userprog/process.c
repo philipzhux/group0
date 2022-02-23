@@ -175,13 +175,32 @@ static void start_process(void* attr_) {
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait(pid_t child_pid UNUSED) {
-  sema_down(&temporary);
-  return 0;
+int process_wait(pid_t child_pid) {
+  struct process * pcb = thread_current()->pcb;
+  struct list * lst = pcb->child_status_list;
+  struct list_elem* e;
+  proc_status_t* status = NULL;
+  int exit_status = -1;
+  
+  for(e = list_begin (lst); e != list_end(lst); e = list_next(e))
+  {
+    proc_status_t* tmp = list_entry(e, proc_status_t, elem);
+    if (tmp->pid == child_pid) {
+      status = tmp;
+      break;
+    }
+  }
+  if (status == NULL) {
+    return exit_status;
+  }
+  sema_down(&status->wait_sema);
+  exit_status = status->exit_status;
+  release_proc_status(status, true);
+  return exit_status;
 }
 
 /* Free the current process's resources. */
-void process_exit(void) {
+void process_exit(int status){
   struct thread* cur = thread_current();
   uint32_t* pd;
 
@@ -191,17 +210,28 @@ void process_exit(void) {
     NOT_REACHED();
   }
 
+  // clean up proc_status
+  struct list* child_list = cur->pcb->child_status_list;
+  for (struct list_elem* e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
+      proc_status_t * status = list_entry(e, proc_status_t, elem);
+      release_proc_status(status, true);
+  }
+  free(child_list);
+  cur->pcb->own_status->exit_status = status;
+  sema_up(&cur->pcb->own_status->wait_sema);
+  release_proc_status(cur->pcb->own_status, false);
+  printf("%s: exit(%d)\n", thread_current()->pcb->process_name, status);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pcb->pagedir;
   if (pd != NULL) {
     /* Correct ordering here is crucial.  We must set
-         cur->pcb->pagedir to NULL before switching page directories,
-         so that a timer interrupt can't switch back to the
-         process page directory.  We must activate the base page
-         directory before destroying the process's page
-         directory, or our active page directory will be one
-         that's been freed (and cleared). */
+      cur->pcb->pagedir to NULL before switching page directories,
+      so that a timer interrupt can't switch back to the
+      process page directory.  We must activate the base page
+      directory before destroying the process's page
+      directory, or our active page directory will be one
+      that's been freed (and cleared). */
     cur->pcb->pagedir = NULL;
     pagedir_activate(NULL);
     pagedir_destroy(pd);

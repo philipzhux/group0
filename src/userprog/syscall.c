@@ -37,20 +37,8 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     if (!validate_args(&args[1], sizeof(uint32_t))) {
       validate_fail(f);
     }
-
-    struct list* child_list = thread_current()->pcb->child_status_list;
-    for (struct list_elem* e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
-        proc_status_t * status = list_entry(e, proc_status_t, elem);
-        release_proc_status(status, true);
-    }
-    free(child_list);
-    thread_current()->pcb->own_status->exit_status = args[1];
-    sema_up(&thread_current()->pcb->own_status->wait_sema);
-    release_proc_status(thread_current()->pcb->own_status, false);
-
     f->eax = args[1];
-    printf("%s: exit(%d)\n", thread_current()->pcb->process_name, args[1]);
-    process_exit();
+    process_exit(args[1]);
   }
   else if(args[0] == SYS_WRITE)
   {
@@ -75,8 +63,12 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     }
     f->eax = process_execute((char *) args[1]);
   }
-
-  
+  else if (args[0] == SYS_WAIT) {
+    if (!validate_args(&args[1], sizeof(uint32_t))) {
+      validate_fail(f);
+    }
+    f->eax = process_wait((pid_t) args[1]);
+  }
 }
 
 bool validate_single(void* addr) {
@@ -109,6 +101,5 @@ bool validate_str(char* ptr) {
 
 void validate_fail(struct intr_frame* f) {
   f->eax = -1;
-  printf("%s: exit(%d)\n", thread_current()->pcb->process_name, -1);
-  process_exit();
+  process_exit(-1);
 }
