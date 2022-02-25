@@ -129,6 +129,8 @@ static void start_process(void* attr_) {
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
     success = load(file_name, &if_.eip, &if_.esp);
+
+    asm volatile("fninit; fsave (%0)" : : "g"(&if_.fpu));
   }
   
   /* Handle failure with succesful PCB malloc. Must free the PCB */
@@ -149,7 +151,7 @@ static void start_process(void* attr_) {
     list_init(t->pcb->child_status_list);
     list_init(t->pcb->file_desc_list);
     t->pcb->file_desc_count = 2;
-  }
+  } 
   
   sema_up(&(attr->status_ptr->wait_sema));
   /* Clean up. Exit on failure or jump to userspace */
@@ -225,6 +227,7 @@ void process_exit(int status){
   if(!list_empty(file_list)) {
     file_desc_t* prev = list_entry(list_begin(file_list), file_desc_t, elem);
     for (struct list_elem* e = list_next(list_begin(file_list)); e != list_end(file_list); e = list_next(e)) {
+        file_close(prev->file);
         free(prev);
         prev = list_entry(e, file_desc_t, elem);
     }

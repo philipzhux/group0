@@ -14,6 +14,7 @@
 #include "threads/synch.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "lib/float.h"
 extern struct lock file_lock;
 extern void putbuf(const char* buffer, size_t n);
 
@@ -48,20 +49,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     }
     f->eax = args[1];
     process_exit(args[1]);
-<<<<<<< HEAD
-  }
-  else if(args[0] == SYS_WRITE)
-  {
-    // TODO: temporary implementation. Add validation + support for arbitrary fd later.
-    if(args[1] == STDOUT_FILENO)
-    {
-      printf("%.*s", (unsigned int) args[3], (char*) args[2]);
-    } 
-  }
-  else if (args[0] == SYS_PRACTICE) {
-=======
   } else if (args[0] == SYS_PRACTICE) {
->>>>>>> 1082d150a9c6a22060db3caeaa69ddbfc45f61a3
     if (!validate_args(&args[1], sizeof(uint32_t))) {
       validate_fail(f);
     }
@@ -74,20 +62,12 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       validate_fail(f);
     }
     f->eax = process_execute((char *) args[1]);
-<<<<<<< HEAD
-  }
-  else if (args[0] == SYS_WAIT) {
-=======
   } else if (args[0] == SYS_WAIT) {
->>>>>>> 1082d150a9c6a22060db3caeaa69ddbfc45f61a3
     if (!validate_args(&args[1], sizeof(uint32_t))) {
       validate_fail(f);
     }
     f->eax = process_wait((pid_t) args[1]);
   } else if (args[0] == SYS_HALT) {
-<<<<<<< HEAD
-      shutdown_power_off();
-=======
     shutdown_power_off();
   } else if (args[0] == SYS_CREATE) {
     if (!validate_args(&args[1], sizeof(char*) + sizeof(unsigned int))) {
@@ -247,7 +227,12 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     f->eax = file_tell(filedesc->file);
     lock_release(&file_lock);
 
->>>>>>> 1082d150a9c6a22060db3caeaa69ddbfc45f61a3
+  } else if (args[0] == SYS_COMPUTE_E) {
+      if (!validate_args(&args[1], sizeof(int))) {
+      validate_fail(f);
+    }
+    f->eax = sys_sum_to_e(args[1]);
+
   }
 }
 
@@ -282,8 +267,6 @@ bool validate_str(char* ptr) {
 void validate_fail(struct intr_frame* f) {
   f->eax = -1;
   process_exit(-1);
-<<<<<<< HEAD
-=======
 }
 
 file_desc_t* find_file(struct process *pcb, int fd) {
@@ -296,5 +279,4 @@ file_desc_t* find_file(struct process *pcb, int fd) {
     }
   }
   return filedesc;
->>>>>>> 1082d150a9c6a22060db3caeaa69ddbfc45f61a3
 }
