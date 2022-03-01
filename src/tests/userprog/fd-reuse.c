@@ -8,7 +8,8 @@
 void test_main(void) {
   char buf[10];
   int fd = wait(exec("fd-reuse-child"));
-  if(fd < 0) return;
+  if (fd < 0)
+    return;
   int status = read(fd, buf, 10);
   if (status != -1)
     fail("read() returned %d", status);
