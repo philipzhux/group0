@@ -42,9 +42,9 @@ void userprog_init(void) {
   /* Kill the kernel if we did not succeed */
   ASSERT(success);
 
-  t->pcb->child_status_list = (struct list *) malloc(sizeof(struct list));
+  t->pcb->child_status_list = (struct list*)malloc(sizeof(struct list));
   list_init(t->pcb->child_status_list);
-  t->pcb->file_desc_list = (struct list *) malloc(sizeof(struct list));
+  t->pcb->file_desc_list = (struct list*)malloc(sizeof(struct list));
   list_init(t->pcb->file_desc_list);
 }
 
@@ -58,14 +58,14 @@ pid_t process_execute(const char* file_name) {
   int prog_name_len = strcspn(file_name, " ");
   char prog_name[prog_name_len + 1]; // Program name.
   strlcpy(prog_name, file_name, prog_name_len + 1);
-  
+
   proc_status_t* status_ptr = (proc_status_t*)malloc(sizeof(proc_status_t));
   status_ptr->pid = -1;
   status_ptr->parent_pcb = thread_current()->pcb;
   sema_init(&(status_ptr->wait_sema), 0);
   lock_init(&(status_ptr->ref_lock));
   status_ptr->ref_count = 2;
-  thread_init_t* attr = (thread_init_t *)malloc(sizeof(thread_init));
+  thread_init_t* attr = (thread_init_t*)malloc(sizeof(thread_init));
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -73,7 +73,7 @@ pid_t process_execute(const char* file_name) {
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
-  
+
   attr->file_name = fn_copy;
   attr->status_ptr = status_ptr;
 
@@ -86,7 +86,7 @@ pid_t process_execute(const char* file_name) {
   sema_down(&status_ptr->wait_sema);
   int pid = status_ptr->pid;
   free(attr); // attr no longer in use
-  if(pid == -1) {
+  if (pid == -1) {
     /* loading child fails
     need to clean up the status struct for the "expected" child */
     free(status_ptr);
@@ -100,7 +100,7 @@ pid_t process_execute(const char* file_name) {
 /* A thread function that loads a user process and starts it
    running. */
 static void start_process(void* attr_) {
-  thread_init_t* attr = (thread_init_t*) attr_;
+  thread_init_t* attr = (thread_init_t*)attr_;
   char* file_name = attr->file_name;
   struct thread* t = thread_current();
   struct intr_frame if_;
@@ -132,7 +132,7 @@ static void start_process(void* attr_) {
 
     asm volatile("fninit; fsave (%0)" : : "g"(&if_.fpu));
   }
-  
+
   /* Handle failure with succesful PCB malloc. Must free the PCB */
   if (!success && pcb_success) {
     // Avoid race where PCB is freed before t->pcb is set to NULL
@@ -142,17 +142,17 @@ static void start_process(void* attr_) {
     t->pcb = NULL;
     free(pcb_to_free);
   }
-  
-  if(success) {
+
+  if (success) {
     attr->status_ptr->pid = t->tid;
     t->pcb->own_status = attr->status_ptr;
-    t->pcb->child_status_list = (struct list *) malloc(sizeof(struct list));
-    t->pcb->file_desc_list = (struct list *) malloc(sizeof(struct list));
+    t->pcb->child_status_list = (struct list*)malloc(sizeof(struct list));
+    t->pcb->file_desc_list = (struct list*)malloc(sizeof(struct list));
     list_init(t->pcb->child_status_list);
     list_init(t->pcb->file_desc_list);
     t->pcb->file_desc_count = 2;
-  } 
-  
+  }
+
   sema_up(&(attr->status_ptr->wait_sema));
   /* Clean up. Exit on failure or jump to userspace */
   palloc_free_page(file_name);
@@ -180,14 +180,13 @@ static void start_process(void* attr_) {
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int process_wait(pid_t child_pid) {
-  struct process * pcb = thread_current()->pcb;
-  struct list * lst = pcb->child_status_list;
+  struct process* pcb = thread_current()->pcb;
+  struct list* lst = pcb->child_status_list;
   struct list_elem* e;
   proc_status_t* status = NULL;
   int exit_status = -1;
-  
-  for(e = list_begin (lst); e != list_end(lst); e = list_next(e))
-  {
+
+  for (e = list_begin(lst); e != list_end(lst); e = list_next(e)) {
     proc_status_t* tmp = list_entry(e, proc_status_t, elem);
     if (tmp->pid == child_pid) {
       status = tmp;
@@ -204,7 +203,7 @@ int process_wait(pid_t child_pid) {
 }
 
 /* Free the current process's resources. */
-void process_exit(int status){
+void process_exit(int status) {
   struct thread* cur = thread_current();
   uint32_t* pd;
 
@@ -217,19 +216,20 @@ void process_exit(int status){
   // clean up child_status_list
   struct list* child_list = cur->pcb->child_status_list;
   for (struct list_elem* e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
-      proc_status_t * status = list_entry(e, proc_status_t, elem);
-      release_proc_status(status, true);
+    proc_status_t* status = list_entry(e, proc_status_t, elem);
+    release_proc_status(status, true);
   }
   free(child_list);
 
   // clean up file_desc_list
   struct list* file_list = cur->pcb->file_desc_list;
-  if(!list_empty(file_list)) {
+  if (!list_empty(file_list)) {
     file_desc_t* prev = list_entry(list_begin(file_list), file_desc_t, elem);
-    for (struct list_elem* e = list_next(list_begin(file_list)); e != list_end(file_list); e = list_next(e)) {
-        file_close(prev->file);
-        free(prev);
-        prev = list_entry(e, file_desc_t, elem);
+    for (struct list_elem* e = list_next(list_begin(file_list)); e != list_end(file_list);
+         e = list_next(e)) {
+      file_close(prev->file);
+      free(prev);
+      prev = list_entry(e, file_desc_t, elem);
     }
     free(prev);
   }
@@ -453,7 +453,9 @@ bool load(char* file_name, void (**eip)(void), void** esp) {
 
 done:
   /* We arrive here whether the load is successful or not. */
-  if(!success) {file_close(file);}
+  if (!success) {
+    file_close(file);
+  }
   return success;
 }
 
@@ -463,14 +465,13 @@ static bool install_page(void* upage, void* kpage, bool writable);
 
 /* Parse the filename for command line arguments,
    then push them onto the stack appropriately. */
-void parse_args(char* filename, void** esp)
-{
+void parse_args(char* filename, void** esp) {
   // push strings in forward order (easiest to implement)
   int argc = 0;
   char* save_ptr = NULL;
   char* token;
-  for(token = strtok_r(filename, " ", &save_ptr); 
-      token != NULL; token = strtok_r(NULL, " ", &save_ptr))  // see lib/string.c:strtok_r()
+  for (token = strtok_r(filename, " ", &save_ptr); token != NULL;
+       token = strtok_r(NULL, " ", &save_ptr)) // see lib/string.c:strtok_r()
   {
     int len = strlen(token);
     *esp -= (len + 1);
@@ -481,8 +482,7 @@ void parse_args(char* filename, void** esp)
   // push argv[0...argc]
   char** argv_start = *esp - sizeof(char*) * (argc + 1);
   size_t cur_length = 0;
-  for(int i = argc - 1; i >= 0; i--)
-  {
+  for (int i = argc - 1; i >= 0; i--) {
     argv_start[i] = *esp + cur_length;
     cur_length += strlen(*esp + cur_length) + 1;
   }
@@ -641,16 +641,16 @@ bool is_main_thread(struct thread* t, struct process* p) { return p->main_thread
 /* Gets the PID of a process */
 pid_t get_pid(struct process* p) { return (pid_t)p->main_thread->tid; }
 
-void release_proc_status(proc_status_t* status, bool parent)
-{
+void release_proc_status(proc_status_t* status, bool parent) {
   int should_free;
   lock_acquire(&(status->ref_lock));
   status->ref_count -= 1;
   should_free = (status->ref_count == 0);
   lock_release(&(status->ref_lock));
-  if(should_free) {
+  if (should_free) {
     // free stuff in proc_status
-    if(parent) list_remove(&status->elem);
-    free(status); 
+    if (parent)
+      list_remove(&status->elem);
+    free(status);
   }
 }

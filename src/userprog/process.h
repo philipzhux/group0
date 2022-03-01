@@ -19,26 +19,21 @@ typedef tid_t pid_t;
 typedef void (*pthread_fun)(void*);
 typedef void (*stub_fun)(pthread_fun, void*);
 
-
-typedef struct proc_status
-{
-  struct list_elem elem;  // PintOS list construct
-  pid_t pid;              // PID of the process
+typedef struct proc_status {
+  struct list_elem elem;      // PintOS list construct
+  pid_t pid;                  // PID of the process
   struct process* parent_pcb; // PCB of parent
-  int exit_status;        // Exit status of the process
-  int ref_count;          // # of references to this struct
-  struct lock ref_lock;          // lock for ref_count
-  struct semaphore wait_sema;    // synchronization for parent/child in exec() and wait()
+  int exit_status;            // Exit status of the process
+  int ref_count;              // # of references to this struct
+  struct lock ref_lock;       // lock for ref_count
+  struct semaphore wait_sema; // synchronization for parent/child in exec() and wait()
 } proc_status_t;
 
-
-typedef struct file_desc
-{
-  struct list_elem elem;  // PintOS list construct.
-  int fd;                 // file descriptor number.
-  struct file* file;      // file pointer to call library functions.
+typedef struct file_desc {
+  struct list_elem elem; // PintOS list construct.
+  int fd;                // file descriptor number.
+  struct file* file;     // file pointer to call library functions.
 } file_desc_t;
-
 
 /* The process control block for a given process. Since
    there can be multiple threads per process, we need a separate
@@ -53,13 +48,13 @@ struct process {
   struct list* child_status_list;
   proc_status_t* own_status;
   struct list* file_desc_list; /* Pointer to list of file descriptions. */
-  uint32_t file_desc_count; /* Starts at 2, and increases when files are opened. */
-  struct file* exec_file; /* File pointer to currently executing file. */
+  uint32_t file_desc_count;    /* Starts at 2, and increases when files are opened. */
+  struct file* exec_file;      /* File pointer to currently executing file. */
 };
 
 typedef struct thread_init {
-    proc_status_t* status_ptr;
-    char* file_name;
+  proc_status_t* status_ptr;
+  char* file_name;
 } thread_init_t;
 
 void userprog_init(void);
