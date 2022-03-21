@@ -29,12 +29,14 @@ static bool too_many_loops(unsigned loops);
 static void busy_wait(int64_t loops);
 static void real_time_sleep(int64_t num, int32_t denom);
 static void real_time_delay(int64_t num, int32_t denom);
-
+static bool timer_less(const struct list_elem* e1, const struct list_elem* e2, void* aux);
+struct list timer_wait_list;
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void timer_init(void) {
   pit_configure_channel(0, 2, TIMER_FREQ);
   intr_register_ext(0x20, timer_interrupt, "8254 Timer");
+  list_init(&timer_wait_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -73,14 +75,27 @@ int64_t timer_ticks(void) {
    should be a value once returned by timer_ticks(). */
 int64_t timer_elapsed(int64_t then) { return timer_ticks() - then; }
 
+bool timer_less(const struct list_elem* e1, const struct list_elem* e2, void* aux) {
+  struct thread* t1 = list_entry(e1, struct thread, elem);
+  struct thread* t2 = list_entry(e2, struct thread, elem);
+  return t1->wakeup_time < t2->wakeup_time;
+}
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void timer_sleep(int64_t ticks) {
+  if (ticks <= 0)
+    return;
+  struct thread* t = thread_current();
+
   int64_t start = timer_ticks();
 
-  ASSERT(intr_get_level() == INTR_ON);
-  while (timer_elapsed(start) < ticks)
-    thread_yield();
+  intr_disable();
+  t->wakeup_time = ticks + start;
+  timer_less(&t->elem, &t->elem, NULL);
+  list_insert_ordered(&timer_wait_list, &t->elem, timer_less, NULL);
+  thread_block();
+  intr_enable();
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -129,6 +144,23 @@ void timer_print_stats(void) { printf("Timer: %" PRId64 " ticks\n", timer_ticks(
 static void timer_interrupt(struct intr_frame* args UNUSED) {
   ticks++;
   thread_tick();
+
+  int64_t now = timer_ticks();
+  while (!list_empty(&timer_wait_list)) {
+    struct list_elem* e = list_front(&timer_wait_list);
+    struct thread* t = list_entry(e, struct thread, elem);
+    if (t->wakeup_time <= now) {
+      list_pop_front(&timer_wait_list);
+      thread_unblock(t);
+
+      if (t->eff_priority > thread_current()->eff_priority) {
+        intr_yield_on_return();
+      }
+
+    } else {
+      break;
+    }
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
