@@ -89,8 +89,9 @@ struct thread {
   uint8_t* stack;            /* Saved stack pointer. */
   int priority;              /* Priority. */
   struct list_elem allelem;  /* List element for all threads list. */
+  int64_t wakeup_time;       /* While on timer_wait_list, holds wakeup time. */
 
-  /* Shared between thread.c and synch.c. */
+  /* Shared between thread.c and synch.c and timer.c. */
   struct list_elem elem; /* List element. */
 
 #ifdef USERPROG
@@ -121,7 +122,7 @@ extern enum sched_policy active_sched_policy;
 void thread_init(void);
 void thread_start(void);
 
-void thread_tick(void);
+void thread_tick(int64_t cur_tick);
 void thread_print_stats(void);
 
 typedef void thread_func(void* aux);

@@ -24,17 +24,22 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
+//list of threads waiting to be woken up at a certain time
+struct list timer_wait_list;
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops(unsigned loops);
 static void busy_wait(int64_t loops);
 static void real_time_sleep(int64_t num, int32_t denom);
 static void real_time_delay(int64_t num, int32_t denom);
+bool timer_list_less(const struct list_elem* a, const struct list_elem* b, UNUSED void* aux);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void timer_init(void) {
   pit_configure_channel(0, 2, TIMER_FREQ);
   intr_register_ext(0x20, timer_interrupt, "8254 Timer");
+  list_init(&timer_wait_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -73,14 +78,28 @@ int64_t timer_ticks(void) {
    should be a value once returned by timer_ticks(). */
 int64_t timer_elapsed(int64_t then) { return timer_ticks() - then; }
 
+bool timer_list_less(const struct list_elem* a, const struct list_elem* b, UNUSED void* aux)
+{
+  return list_entry(a, struct thread, elem)->wakeup_time < list_entry(b, struct thread, elem)->wakeup_time;
+}
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void timer_sleep(int64_t ticks) {
-  int64_t start = timer_ticks();
-
+  if(ticks <= 0) return;
   ASSERT(intr_get_level() == INTR_ON);
-  while (timer_elapsed(start) < ticks)
-    thread_yield();
+  int64_t start = timer_ticks();
+  struct thread* t = thread_current();
+  t->wakeup_time = start + ticks;
+
+  enum intr_level old_level = intr_disable();
+  // add thread to timer_wait_list and sort
+  list_push_back(&timer_wait_list, &t->elem);
+  list_sort(&timer_wait_list, &timer_list_less, NULL);
+  // thread_block() must be called with interrupts off
+  thread_block();
+
+  intr_set_level(old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -128,7 +147,7 @@ void timer_print_stats(void) { printf("Timer: %" PRId64 " ticks\n", timer_ticks(
 /* Timer interrupt handler. */
 static void timer_interrupt(struct intr_frame* args UNUSED) {
   ticks++;
-  thread_tick();
+  thread_tick(timer_ticks());
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

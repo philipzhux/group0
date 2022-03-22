@@ -28,6 +28,9 @@ static struct list fifo_ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+// List of threads waiting for timer.
+extern struct list timer_wait_list;
+
 /* Idle thread. */
 static struct thread* idle_thread;
 
@@ -134,7 +137,7 @@ void thread_start(void) {
 
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
-void thread_tick(void) {
+void thread_tick(int64_t cur_tick) {
   struct thread* t = thread_current();
 
   /* Update statistics. */
@@ -146,9 +149,34 @@ void thread_tick(void) {
 #endif
   else
     kernel_ticks++;
+  
+  // check for timer expiration
+  bool higher_prio_woken = false;
+  struct list_elem* e = list_begin(&timer_wait_list);
+  while(e != list_end(&timer_wait_list))
+  {
+    struct thread* wait_t = list_entry(e, struct thread, elem);
+    if(wait_t->wakeup_time <= cur_tick)
+    {
+      // timer expired; move thread to ready list
+      list_pop_front(&timer_wait_list);
+      thread_unblock(wait_t);
 
-  /* Enforce preemption. */
-  if (++thread_ticks >= TIME_SLICE)
+      if(wait_t->priority > t->priority)
+      {
+        higher_prio_woken = true;
+      }
+    }
+    else
+    {
+      break;
+    }
+
+    e = list_begin(&timer_wait_list);
+  }
+
+  /* Enforce preemption, and yield if a higher-priority thread just came off timer. */
+  if (++thread_ticks >= TIME_SLICE || higher_prio_woken)
     intr_yield_on_return();
 }
 
