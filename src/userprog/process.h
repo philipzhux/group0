@@ -50,11 +50,19 @@ struct process {
   struct list* file_desc_list; /* Pointer to list of file descriptions. */
   uint32_t file_desc_count;    /* Starts at 2, and increases when files are opened. */
   struct file* exec_file;      /* File pointer to currently executing file. */
+
+  struct list thread_list;
+  int stack_page_cnt;
 };
 
 typedef struct thread_init {
   proc_status_t* status_ptr;
   char* file_name;
+  stub_fun sf;
+  pthread_fun tf;
+  void* arg;
+  struct process* pcb;
+
 } thread_init_t;
 
 void userprog_init(void);

@@ -27,3 +27,4 @@ void _pthread_start_stub(pthread_fun fun, void* arg) {
   (*fun)(arg);    // Invoke the thread function
   pthread_exit(); // Call pthread_exit
 }
+//loadusersymbols tests/userprog/multithreading/create-simple

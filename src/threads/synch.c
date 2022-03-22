@@ -421,7 +421,6 @@ void cond_signal(struct condition* cond, struct lock* lock UNUSED) {
     ASSERT(max_sema != NULL);
     sema_up(max_sema);
   }
-
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by

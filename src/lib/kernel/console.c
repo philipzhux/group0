@@ -62,7 +62,7 @@ static int64_t write_cnt;
 /* Enable console locking. */
 void console_init(void) {
   lock_init(&console_lock);
-  use_console_lock = true;
+  use_console_lock = false;
 }
 
 /* Notifies the console that a kernel panic is underway,

@@ -92,7 +92,7 @@ void timer_sleep(int64_t ticks) {
 
   intr_disable();
   t->wakeup_time = ticks + start;
-  timer_less(&t->elem, &t->elem, NULL);
+  //   timer_less(&t->elem, &t->elem, NULL);
   list_insert_ordered(&timer_wait_list, &t->elem, timer_less, NULL);
   thread_block();
   intr_enable();
