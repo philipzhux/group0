@@ -111,6 +111,7 @@ void thread_init(void) {
 
   lock_init(&tid_lock);
   list_init(&fifo_ready_list);
+  //   list_init(&timer_wait_list);
   list_init(&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -151,32 +152,25 @@ void thread_tick(int64_t cur_tick) {
     kernel_ticks++;
   
   // check for timer expiration
-  bool higher_prio_woken = false;
-  struct list_elem* e = list_begin(&timer_wait_list);
-  while(e != list_end(&timer_wait_list))
-  {
-    struct thread* wait_t = list_entry(e, struct thread, elem);
-    if(wait_t->wakeup_time <= cur_tick)
-    {
-      // timer expired; move thread to ready list
+  while (!list_empty(&timer_wait_list)) {
+    struct list_elem* e = list_front(&timer_wait_list);
+    struct thread* t = list_entry(e, struct thread, elem);
+    if (t->wakeup_time <= cur_tick) {
       list_pop_front(&timer_wait_list);
-      thread_unblock(wait_t);
+      thread_unblock(t);
 
-      if(wait_t->priority > t->priority)
-      {
-        higher_prio_woken = true;
+      if (t->eff_priority > thread_current()->eff_priority) {
+        // yield if a thread with higher priority came off timer
+        intr_yield_on_return();
       }
-    }
-    else
-    {
+
+    } else {
       break;
     }
-
-    e = list_begin(&timer_wait_list);
   }
 
-  /* Enforce preemption, and yield if a higher-priority thread just came off timer. */
-  if (++thread_ticks >= TIME_SLICE || higher_prio_woken)
+  /* Enforce preemption. */
+  if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return();
 }
 
@@ -239,10 +233,12 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
 
   asm volatile("fsave (%0); fninit; fsave (%1); frstor (%0)" : : "g"(fpu), "g"(&tmp->fpu));
   //   asm volatile("fninit; fsave (%0)" : : "g"(&tmp->fpu));
-
+  // t->pcb = thread_current()->pcb;
   /* Add to run queue. */
   thread_unblock(t);
-
+  if (t->eff_priority > thread_current()->eff_priority) {
+    thread_yield();
+  }
   return tid;
 
   /* discuss:
@@ -272,10 +268,14 @@ static void thread_enqueue(struct thread* t) {
   ASSERT(intr_get_level() == INTR_OFF);
   ASSERT(is_thread(t));
 
-  if (active_sched_policy == SCHED_FIFO)
+  if (active_sched_policy == SCHED_FIFO) {
     list_push_back(&fifo_ready_list, &t->elem);
-  else
+  } else if (active_sched_policy == SCHED_PRIO) {
+    list_push_back(&fifo_ready_list, &t->elem);
+    // list_insert_ordered(&fifo_ready_list, &t->elem, )
+  } else {
     PANIC("Unimplemented scheduling policy value: %d", active_sched_policy);
+  }
 }
 
 /* Transitions a blocked thread T to the ready-to-run state.
@@ -296,6 +296,8 @@ void thread_unblock(struct thread* t) {
   thread_enqueue(t);
   t->status = THREAD_READY;
   intr_set_level(old_level);
+
+  // TODO: check if unblocked thread has greater priority than currently running thread, if so call schedule
 }
 
 /* Returns the name of the running thread. */
@@ -366,10 +368,28 @@ void thread_foreach(thread_action_func* func, void* aux) {
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
-void thread_set_priority(int new_priority) { thread_current()->priority = new_priority; }
+void thread_set_priority(int new_priority) {
+
+  enum intr_level old_level = intr_disable();
+
+  struct thread* t = thread_current();
+  t->priority = new_priority;
+  if(list_empty(&t->gotten_prio_list) || t->eff_priority < new_priority)
+  {
+    // if no donations or new base priority is higher than current,
+    // set effective priority to new value
+    t->eff_priority = new_priority;
+  }
+
+  struct thread* tmp = max_thread_from_list(&fifo_ready_list);
+  if (tmp != NULL && tmp->eff_priority > t->eff_priority) {
+    thread_yield();
+  }
+  intr_set_level(old_level);
+}
 
 /* Returns the current thread's priority. */
-int thread_get_priority(void) { return thread_current()->priority; }
+int thread_get_priority(void) { return thread_current()->eff_priority; }
 
 /* Sets the current thread's nice value to NICE. */
 void thread_set_nice(int nice UNUSED) { /* Not yet implemented. */
@@ -466,6 +486,9 @@ static void init_thread(struct thread* t, const char* name, int priority) {
   strlcpy(t->name, name, sizeof t->name);
   t->stack = (uint8_t*)t + PGSIZE;
   t->priority = priority;
+  t->eff_priority = priority;
+  list_init(&t->gotten_prio_list);
+  t->waiting_lock = NULL;
   t->pcb = NULL;
   t->magic = THREAD_MAGIC;
 
@@ -493,9 +516,27 @@ static struct thread* thread_schedule_fifo(void) {
     return idle_thread;
 }
 
+struct thread* max_thread_from_list(struct list* l) {
+  enum intr_level old_level = intr_disable();
+
+  struct thread* t_max = NULL;
+  for (struct list_elem* e = list_begin(l); e != list_end(l); e = list_next(e)) {
+    struct thread* tmp = list_entry(e, struct thread, elem);
+    if (t_max == NULL || tmp->eff_priority > t_max->eff_priority) {
+      t_max = tmp;
+    }
+  }
+  intr_set_level(old_level);
+  return t_max;
+}
+
 /* Strict priority scheduler */
 static struct thread* thread_schedule_prio(void) {
-  PANIC("Unimplemented scheduler policy: \"-sched=prio\"");
+  struct thread* t_max = max_thread_from_list(&fifo_ready_list);
+  if (t_max == NULL)
+    return idle_thread;
+  list_remove(&t_max->elem);
+  return t_max;
 }
 
 /* Fair priority scheduler */

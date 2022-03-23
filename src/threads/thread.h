@@ -94,6 +94,12 @@ struct thread {
   /* Shared between thread.c and synch.c and timer.c. */
   struct list_elem elem; /* List element. */
 
+  int64_t eff_priority;
+  struct list gotten_prio_list;
+  struct lock* waiting_lock;
+
+  struct list_elem thread_list_elem;
+
 #ifdef USERPROG
   /* Owned by process.c. */
   struct process* pcb; /* Process control block if this thread is a userprog */
@@ -101,6 +107,12 @@ struct thread {
 
   /* Owned by thread.c. */
   unsigned magic; /* Detects stack overflow. */
+};
+
+struct donate_pair {
+  struct lock* lock_name; // pointer to lock that caused the donation
+  int priority;           // priority of the thread waiting on lock (i.e. donator)
+  struct list_elem elem;
 };
 
 /* Types of scheduler that the user can request the kernel
@@ -150,4 +162,5 @@ void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 
+struct thread* max_thread_from_list(struct list*);
 #endif /* threads/thread.h */

@@ -32,7 +32,7 @@ static bool too_many_loops(unsigned loops);
 static void busy_wait(int64_t loops);
 static void real_time_sleep(int64_t num, int32_t denom);
 static void real_time_delay(int64_t num, int32_t denom);
-bool timer_list_less(const struct list_elem* a, const struct list_elem* b, UNUSED void* aux);
+static bool timer_less(const struct list_elem* e1, const struct list_elem* e2, void* aux);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -78,9 +78,10 @@ int64_t timer_ticks(void) {
    should be a value once returned by timer_ticks(). */
 int64_t timer_elapsed(int64_t then) { return timer_ticks() - then; }
 
-bool timer_list_less(const struct list_elem* a, const struct list_elem* b, UNUSED void* aux)
-{
-  return list_entry(a, struct thread, elem)->wakeup_time < list_entry(b, struct thread, elem)->wakeup_time;
+bool timer_less(const struct list_elem* e1, const struct list_elem* e2, void* aux) {
+  struct thread* t1 = list_entry(e1, struct thread, elem);
+  struct thread* t2 = list_entry(e2, struct thread, elem);
+  return t1->wakeup_time < t2->wakeup_time;
 }
 
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
@@ -94,8 +95,7 @@ void timer_sleep(int64_t ticks) {
 
   enum intr_level old_level = intr_disable();
   // add thread to timer_wait_list and sort
-  list_push_back(&timer_wait_list, &t->elem);
-  list_sort(&timer_wait_list, &timer_list_less, NULL);
+  list_insert_ordered(&timer_wait_list, &t->elem, timer_less, NULL);
   // thread_block() must be called with interrupts off
   thread_block();
 

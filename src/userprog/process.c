@@ -48,6 +48,7 @@ void userprog_init(void) {
   list_init(t->pcb->child_status_list);
   t->pcb->file_desc_list = (struct list*)malloc(sizeof(struct list));
   list_init(t->pcb->file_desc_list);
+  lock_init(&t->pcb->master_lock);
 }
 
 /* Starts a new thread running a user program loaded from
@@ -152,7 +153,11 @@ static void start_process(void* attr_) {
     t->pcb->file_desc_list = (struct list*)malloc(sizeof(struct list));
     list_init(t->pcb->child_status_list);
     list_init(t->pcb->file_desc_list);
+    list_init(&(t->pcb->thread_list));
+    t->pcb->stack_page_cnt = 1;
     t->pcb->file_desc_count = 2;
+
+    lock_init(&t->pcb->master_lock);
   }
 
   sema_up(&(attr->status_ptr->wait_sema));
@@ -675,7 +680,19 @@ bool setup_thread(void (**eip)(void) UNUSED, void** esp UNUSED) { return false; 
    This function will be implemented in Project 2: Multithreading and
    should be similar to process_execute (). For now, it does nothing.
    */
-tid_t pthread_execute(stub_fun sf UNUSED, pthread_fun tf UNUSED, void* arg UNUSED) { return -1; }
+tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
+  thread_init_t* start_pthread_args =
+      malloc(sizeof(thread_init_t)); // TODO: free this in start_pthread
+  start_pthread_args->sf = sf;
+  start_pthread_args->tf = tf;
+  start_pthread_args->arg = arg;
+  start_pthread_args->pcb = thread_current()->pcb;
+
+  char name[16];
+  snprintf(name, 15, "%p", tf);
+
+  return thread_create(name, PRI_DEFAULT, start_pthread, start_pthread_args);
+}
 
 /* A thread function that creates a new user thread and starts it
    running. Responsible for adding itself to the list of threads in
@@ -683,7 +700,73 @@ tid_t pthread_execute(stub_fun sf UNUSED, pthread_fun tf UNUSED, void* arg UNUSE
 
    This function will be implemented in Project 2: Multithreading and
    should be similar to start_process (). For now, it does nothing. */
-static void start_pthread(void* exec_ UNUSED) {}
+static void start_pthread(void* args_) {
+  thread_init_t* args = (thread_init_t*)args_;
+  struct thread* t = thread_current();
+  t->pcb = args->pcb;
+  process_activate();
+
+  // lock
+  lock_acquire(&t->pcb->master_lock);
+  list_push_front(&t->pcb->thread_list, &t->proc_thread_list_elem);
+  lock_release(&t->pcb->master_lock);
+  // relase lock
+
+  // initialize interrupt frame
+  struct intr_frame if_;
+  memset(&if_, 0, sizeof if_);
+  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
+  if_.cs = SEL_UCSEG;
+  if_.eflags = FLAG_IF | FLAG_MBS;
+  if_.eip = (void*)(args->sf);
+  asm volatile("fninit; fsave (%0)" : : "g"(&if_.fpu));
+
+  // allocate thread stack and set esp
+  uint8_t* kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+  bool success = false;
+  if (kpage != NULL) {
+    int offset = t->pcb->stack_page_cnt + 1;
+
+    void* addr = PHYS_BASE - PGSIZE;
+    while (pagedir_get_page(t->pcb->pagedir, (uint32_t*)addr)) {
+      addr -= PGSIZE;
+    }
+
+    success = install_page(addr, kpage, true);
+    if (success) {
+      if_.esp = addr + PGSIZE;
+      t->pcb->stack_page_cnt++;
+    } else
+      palloc_free_page(kpage);
+  }
+
+  /* 
+
+    push args
+    0x...8 [8] padding
+    0x...4 [4] (void*) arg
+    0x...0 [4] (pthread_fun)
+    0x...c [4] fake rip
+    
+    */
+
+  if_.esp -= 8;
+  *((long*)if_.esp) = 0;
+
+  if_.esp -= sizeof(void*);
+  *((int**)if_.esp) = args->arg;
+
+  if_.esp -= sizeof(pthread_fun);
+  *((pthread_fun*)if_.esp) = args->tf;
+
+  if_.esp -= sizeof(int);
+  *((int*)if_.esp) = 0;
+
+  free(args);
+
+  asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
+  NOT_REACHED();
+}
 
 /* Waits for thread with TID to die, if that thread was spawned
    in the same process and has not been waited on yet. Returns TID on

@@ -228,6 +228,11 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       validate_fail(f);
     }
     f->eax = sys_sum_to_e(args[1]);
+  } else if (args[0] == SYS_PT_CREATE) {
+    if (!validate_args(&args[1], 3 * sizeof(void*))) {
+      validate_fail(f);
+    }
+    f->eax = pthread_execute((stub_fun)args[1], (pthread_fun)args[2], (void*)args[3]);
   }
 }
 
