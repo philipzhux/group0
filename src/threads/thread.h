@@ -87,18 +87,20 @@ struct thread {
   enum thread_status status; /* Thread state. */
   char name[16];             /* Name (for debugging purposes). */
   uint8_t* stack;            /* Saved stack pointer. */
-  int priority;              /* Priority. */
+  int priority;              /* Base priority. */
   struct list_elem allelem;  /* List element for all threads list. */
   int64_t wakeup_time;       /* While on timer_wait_list, holds wakeup time. */
 
   /* Shared between thread.c and synch.c and timer.c. */
-  struct list_elem elem; /* List element. */
+  struct list_elem elem; /* List element for scheduling. */
 
-  int64_t eff_priority;
-  struct list gotten_prio_list;
-  struct lock* waiting_lock;
+  int64_t eff_priority;        // Effective priority.
+  struct list gotten_prio_list;// List of received donate_pairs from donated priorities.
+  struct lock* waiting_lock;   // Lock that this thread is currently waiting on. Is NULL when not waiting on lock.
 
-  struct list_elem thread_list_elem;
+  struct list_elem proc_thread_list_elem; /* List element on the process's thread_list. */
+
+  void* saved_upage; // save ptr to user stack for freeing in pthread_exit
 
 #ifdef USERPROG
   /* Owned by process.c. */

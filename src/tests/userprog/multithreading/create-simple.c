@@ -12,7 +12,7 @@ void thread_function(void* arg UNUSED) { msg("Thread ran."); }
 
 void test_main(void) {
   msg("Main started.");
-  tid_t tid = pthread_check_create(thread_function, NULL);
-  pthread_check_join(tid);
+  tid_t tid = pthread_check_create(thread_function, 8191);
+  //pthread_check_join(tid);
   msg("Main finished.");
 }

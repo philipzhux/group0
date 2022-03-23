@@ -23,7 +23,7 @@
 static thread_func start_process NO_RETURN;
 static thread_func start_pthread NO_RETURN;
 static bool load(char* file_name, void (**eip)(void), void** esp);
-bool setup_thread(void (**eip)(void), void** esp);
+bool setup_thread(void (**eip)(void), void** esp, thread_init_t* args);
 
 /* Initializes user programs in the system by ensuring the main
    thread has a minimal PCB so that it can execute and wait for
@@ -48,6 +48,7 @@ void userprog_init(void) {
   list_init(t->pcb->child_status_list);
   t->pcb->file_desc_list = (struct list*)malloc(sizeof(struct list));
   list_init(t->pcb->file_desc_list);
+  list_init(&t->pcb->join_status_list);
   lock_init(&t->pcb->master_lock);
 }
 
@@ -154,6 +155,7 @@ static void start_process(void* attr_) {
     list_init(t->pcb->child_status_list);
     list_init(t->pcb->file_desc_list);
     list_init(&(t->pcb->thread_list));
+    list_init(&t->pcb->join_status_list);
     t->pcb->stack_page_cnt = 1;
     t->pcb->file_desc_count = 2;
 
@@ -669,7 +671,55 @@ void release_proc_status(proc_status_t* status, bool parent) {
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. You may find it necessary to change the
    function signature. */
-bool setup_thread(void (**eip)(void) UNUSED, void** esp UNUSED) { return false; }
+bool setup_thread(void (**eip)(void), void** esp, thread_init_t* args) {
+  struct thread* t = thread_current();
+  
+  // set eip
+  *eip = (void*)(args->sf);
+
+  // allocate thread stack and set esp
+  uint8_t* kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+  bool success = false;
+
+  if (kpage != NULL) {
+    void* addr = PHYS_BASE - PGSIZE;
+    while (pagedir_get_page(t->pcb->pagedir, (uint32_t*)addr)) {
+      if(addr == 0)
+      {
+        palloc_free_page(kpage);
+        return false;
+      }
+      addr -= PGSIZE;
+    }
+
+    success = install_page(addr, kpage, true);
+    if (success) {
+      *esp = addr + PGSIZE;
+      // t->pcb->stack_page_cnt++;
+      t->saved_upage = addr;
+
+      /* push args
+      0x...8 [8] padding
+      0x...4 [4] (void*) arg
+      0x...0 [4] (pthread_fun)
+      0x...c [4] fake rip */
+      *esp -= 8;
+      *((long*)*esp) = 0;
+
+      *esp -= sizeof(void*);
+      *((int**)*esp) = args->arg;
+
+      *esp -= sizeof(pthread_fun);
+      *((pthread_fun*)*esp) = args->tf;
+
+      *esp -= sizeof(int);
+      *((int*)*esp) = 0;
+    } else
+      palloc_free_page(kpage);
+  }
+  
+  return success;
+}
 
 /* Starts a new thread with a new user stack running SF, which takes
    TF and ARG as arguments on its user stack. This new thread may be
@@ -681,17 +731,39 @@ bool setup_thread(void (**eip)(void) UNUSED, void** esp UNUSED) { return false; 
    should be similar to process_execute (). For now, it does nothing.
    */
 tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
+  struct process* pcb = thread_current()->pcb;
   thread_init_t* start_pthread_args =
-      malloc(sizeof(thread_init_t)); // TODO: free this in start_pthread
+      malloc(sizeof(thread_init_t));
   start_pthread_args->sf = sf;
   start_pthread_args->tf = tf;
   start_pthread_args->arg = arg;
-  start_pthread_args->pcb = thread_current()->pcb;
+  start_pthread_args->pcb = pcb;
+  start_pthread_args->join_status = malloc(sizeof(join_status_t));
 
+  // init join status
+  join_status_t * status = start_pthread_args->join_status;
+  sema_init(&status->join_sema, 0);
+  status->was_joined = false;
+
+  // set name of thread
   char name[16];
   snprintf(name, 15, "%p", tf);
+  
+  thread_create(name, PRI_DEFAULT, start_pthread, start_pthread_args);
+  sema_down(&status->join_sema);
 
-  return thread_create(name, PRI_DEFAULT, start_pthread, start_pthread_args);
+  // handle join_status based on result
+  if(status->tid == TID_ERROR)
+  {
+    free(status);
+  }
+  else
+  {
+    lock_acquire(&pcb->master_lock);
+    list_push_back(&pcb->join_status_list, &status->elem);
+    lock_release(&pcb->master_lock);
+  }
+  return status->tid;
 }
 
 /* A thread function that creates a new user thread and starts it
@@ -706,63 +778,33 @@ static void start_pthread(void* args_) {
   t->pcb = args->pcb;
   process_activate();
 
-  // lock
-  lock_acquire(&t->pcb->master_lock);
-  list_push_front(&t->pcb->thread_list, &t->proc_thread_list_elem);
-  lock_release(&t->pcb->master_lock);
-  // relase lock
-
   // initialize interrupt frame
   struct intr_frame if_;
   memset(&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  if_.eip = (void*)(args->sf);
   asm volatile("fninit; fsave (%0)" : : "g"(&if_.fpu));
 
-  // allocate thread stack and set esp
-  uint8_t* kpage = palloc_get_page(PAL_USER | PAL_ZERO);
-  bool success = false;
-  if (kpage != NULL) {
-    int offset = t->pcb->stack_page_cnt + 1;
+  bool success = setup_thread(&if_.eip, &if_.esp, args);
 
-    void* addr = PHYS_BASE - PGSIZE;
-    while (pagedir_get_page(t->pcb->pagedir, (uint32_t*)addr)) {
-      addr -= PGSIZE;
-    }
-
-    success = install_page(addr, kpage, true);
-    if (success) {
-      if_.esp = addr + PGSIZE;
-      t->pcb->stack_page_cnt++;
-    } else
-      palloc_free_page(kpage);
+  join_status_t * status = args->join_status;
+  free(args);
+  if (!success) {
+    status->tid = TID_ERROR;
+    sema_up(&status->join_sema);
+    thread_exit(); // does not return
+  }
+  else
+  {
+    status->tid = t->tid;
+    sema_up(&status->join_sema);
   }
 
-  /* 
-
-    push args
-    0x...8 [8] padding
-    0x...4 [4] (void*) arg
-    0x...0 [4] (pthread_fun)
-    0x...c [4] fake rip
-    
-    */
-
-  if_.esp -= 8;
-  *((long*)if_.esp) = 0;
-
-  if_.esp -= sizeof(void*);
-  *((int**)if_.esp) = args->arg;
-
-  if_.esp -= sizeof(pthread_fun);
-  *((pthread_fun*)if_.esp) = args->tf;
-
-  if_.esp -= sizeof(int);
-  *((int*)if_.esp) = 0;
-
-  free(args);
+  // push new thread onto thread_list
+  lock_acquire(&t->pcb->master_lock);
+  list_push_front(&t->pcb->thread_list, &t->proc_thread_list_elem);
+  lock_release(&t->pcb->master_lock);
 
   asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
   NOT_REACHED();

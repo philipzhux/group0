@@ -233,7 +233,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       validate_fail(f);
     }
     f->eax = pthread_execute((stub_fun)args[1], (pthread_fun)args[2], (void*)args[3]);
-  }
+  } 
 }
 
 bool validate_single(void* addr) {
