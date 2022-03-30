@@ -900,7 +900,7 @@ void pthread_exit_main(void) {
 
   lock_acquire(&t->pcb->master_lock);
   
-  while(!list_empty(&t->pcb->join_status_list)) {
+  while(list_size(&t->pcb->join_status_list) > 1) {
     for (struct list_elem *e = list_begin(&t->pcb->join_status_list);  e != list_end(&t->pcb->join_status_list); e = list_next(e)) {
       struct join_status *tmp = list_entry(e, struct join_status, elem);
       if (!tmp->was_joined && tmp->tid != t->tid) {
