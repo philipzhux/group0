@@ -161,6 +161,13 @@ static void start_process(void* attr_) {
     t->pcb->file_desc_count = 2;
     cond_init(&t->pcb->exit_cond_var);
     lock_init(&t->pcb->master_lock);
+
+    // allocate and initialize a join_status for the main thread
+    join_status_t* main_status = malloc(sizeof(join_status_t));
+    sema_init(&main_status->join_sema, 0);
+    main_status->was_joined = false;
+    t->join_status = main_status;
+    list_push_front(&t->pcb->join_status_list, &main_status->elem);
   }
 
   sema_up(&(attr->status_ptr->wait_sema));
@@ -855,15 +862,14 @@ tid_t pthread_join(tid_t tid) {
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
 void pthread_exit(void) {
-   struct thread * t = thread_current();
-   join_status_t * status = t->join_status;
+  struct thread * t = thread_current();
+  join_status_t * status = t->join_status;
 
-   // free user stack
-   void * kpage = pagedir_get_page(t->pcb->pagedir, t->saved_upage);
-   palloc_free_page(kpage);
-   pagedir_clear_page(t->pcb->pagedir, t->saved_upage); // clear page table entry
+  // free user stack
+  void * kpage = pagedir_get_page(t->pcb->pagedir, t->saved_upage);
+  palloc_free_page(kpage);
+  pagedir_clear_page(t->pcb->pagedir, t->saved_upage); // clear page table entry
    
-
   lock_acquire(&t->pcb->master_lock);
   list_remove(&t->proc_thread_list_elem);
   // wake up thread that has joined on this
