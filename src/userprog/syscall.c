@@ -241,7 +241,9 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     }
     f->eax = pthread_join((tid_t)args[1]);
 
-  } else if (args[0] == SYS_PT_EXIT)
+  } else if (args[0] == SYS_PT_EXIT) {
+    struct thread *t = thread_current();
+  }
 }
 
 bool validate_single(void* addr) {

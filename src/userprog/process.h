@@ -54,8 +54,8 @@ struct process {
   struct list thread_list;
   int stack_page_cnt;
   struct lock master_lock;     /* Lock used for thread_list, file_desc_list, user locks and semaphores list */
-  
   struct list join_status_list;  // list of join_statuses for threads in this process; only holds unfinished or unjoined threads
+  struct condition exit_cond_var; // 
 };
 
 typedef struct join_status {

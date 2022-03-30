@@ -50,6 +50,7 @@ void userprog_init(void) {
   list_init(t->pcb->file_desc_list);
   list_init(&t->pcb->join_status_list);
   lock_init(&t->pcb->master_lock);
+  cond_init(&t->pcb->exit_cond_var);
 }
 
 /* Starts a new thread running a user program loaded from
@@ -158,7 +159,7 @@ static void start_process(void* attr_) {
     list_init(&t->pcb->join_status_list);
     t->pcb->stack_page_cnt = 1;
     t->pcb->file_desc_count = 2;
-
+    cond_init(&t->pcb->exit_cond_var);
     lock_init(&t->pcb->master_lock);
   }
 
@@ -853,7 +854,29 @@ tid_t pthread_join(tid_t tid) {
 
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
-void pthread_exit(void) {}
+void pthread_exit(void) {
+   struct thread * t = thread_current();
+   join_status_t * status = t->join_status;
+
+   // free user stack
+   void * kpage = pagedir_get_page(t->pcb->pagedir, t->saved_upage);
+   palloc_free_page(kpage);
+   pagedir_clear_page(t->pcb->pagedir, t->saved_upage); // clear page table entry
+   
+
+  lock_acquire(&t->pcb->master_lock);
+  list_remove(&t->proc_thread_list_elem);
+  // wake up thread that has joined on this
+  sema_up(&status->join_sema);
+
+  // wake up main thread if it is exiting
+  if (list_size(&t->pcb->thread_list) == 1) {
+    cond_signal(&t->pcb->exit_cond_var, &t->pcb->master_lock);
+  }
+  lock_release(&t->pcb->master_lock);
+  
+  thread_exit();
+}
 
 /* Only to be used when the main thread explicitly calls pthread_exit.
    The main thread should wait on all threads in the process to
@@ -863,4 +886,28 @@ void pthread_exit(void) {}
 
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
-void pthread_exit_main(void) {}
+void pthread_exit_main(void) {
+  // wake up thread that has joined on this
+  struct thread * t = thread_current();
+  struct join_status* status = t->join_status;
+  sema_up(&status->join_sema);
+
+  lock_acquire(&t->pcb->master_lock);
+  
+  while(!list_empty(&t->pcb->join_status_list)) {
+    for (struct list_elem *e = list_begin(&t->pcb->join_status_list);  e != list_end(&t->pcb->join_status_list); e = list_next(e)) {
+      struct join_status *tmp = list_entry(e, struct join_status, elem);
+      if (!tmp->was_joined && tmp->tid != t->tid) {
+        tmp->was_joined = true;
+        list_remove(e);
+        lock_release(&t->pcb->master_lock);
+        sema_down(&tmp->join_sema);
+        lock_acquire(&t->pcb->master_lock);
+        break;
+      }
+    }
+  }
+  lock_release(&t->pcb->master_lock);
+  
+  process_exit(0);
+}
