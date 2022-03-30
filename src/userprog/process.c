@@ -756,14 +756,10 @@ tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
   if(status->tid == TID_ERROR)
   {
     free(status);
+    return TID_ERROR;
+  } else {
+    return status->tid;
   }
-  else
-  {
-    lock_acquire(&pcb->master_lock);
-    list_push_back(&pcb->join_status_list, &status->elem);
-    lock_release(&pcb->master_lock);
-  }
-  return status->tid;
 }
 
 /* A thread function that creates a new user thread and starts it
@@ -801,10 +797,12 @@ static void start_pthread(void* args_) {
     sema_up(&status->join_sema);
   }
 
-  // push new thread onto thread_list
+  // push new thread onto thread_list and join status onto join_status_list
   lock_acquire(&t->pcb->master_lock);
   list_push_front(&t->pcb->thread_list, &t->proc_thread_list_elem);
+  list_push_back(&t->pcb->join_status_list, &status->elem);
   lock_release(&t->pcb->master_lock);
+  t->join_status = status;
 
   asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
   NOT_REACHED();
@@ -817,7 +815,34 @@ static void start_pthread(void* args_) {
 
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
-tid_t pthread_join(tid_t tid UNUSED) { return -1; }
+tid_t pthread_join(tid_t tid) { 
+  
+  struct thread * t = thread_current();
+  join_status_t * status = NULL;
+  lock_acquire(&t->pcb->master_lock);
+
+  for (struct list_elem * e = list_begin(&t->pcb->join_status_list); e != list_end(&t->pcb->join_status_list); e = list_next(e)) {
+    struct join_status * tmp = list_entry(e, struct join_status, elem);
+    if (tmp->tid == tid) {
+      status = tmp;
+    }
+  }
+  if (status == NULL || status->was_joined) {
+    lock_release(&t->pcb->master_lock);
+    return TID_ERROR;
+  }
+  status->was_joined = true;
+  lock_release(&t->pcb->master_lock);
+
+  sema_down(&status->join_sema);
+
+  lock_acquire(&t->pcb->master_lock);
+  list_remove(&status->elem);
+  lock_release(&t->pcb->master_lock);
+  free(status);
+  return tid;
+}
+
 
 /* Free the current thread's resources. Most resources will
    be freed on thread_exit(), so all we have to do is deallocate the

@@ -99,6 +99,7 @@ struct thread {
   struct lock* waiting_lock;   // Lock that this thread is currently waiting on. Is NULL when not waiting on lock.
 
   struct list_elem proc_thread_list_elem; /* List element on the process's thread_list. */
+  struct join_status* join_status; // pointer to its own join status
 
   void* saved_upage; // save ptr to user stack for freeing in pthread_exit
 
