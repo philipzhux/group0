@@ -87,7 +87,8 @@ bool timer_less(const struct list_elem* e1, const struct list_elem* e2, void* au
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void timer_sleep(int64_t ticks) {
-  if(ticks <= 0) return;
+  if (ticks <= 0)
+    return;
   ASSERT(intr_get_level() == INTR_ON);
   int64_t start = timer_ticks();
   struct thread* t = thread_current();

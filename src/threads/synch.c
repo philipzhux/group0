@@ -117,8 +117,7 @@ void sema_up(struct semaphore* sema) {
   }
   sema->value++;
   intr_set_level(old_level);
-  if(should_yield)
-  {
+  if (should_yield) {
     if (intr_context()) {
       intr_yield_on_return();
     } else {
@@ -254,7 +253,7 @@ void lock_release(struct lock* lock) {
   struct thread* t = thread_current();
   // priority to set this thread to afterwards; =max of remaining donations and base priority
   int64_t new_prio = t->priority;
-  
+
   enum intr_level old_level = intr_disable();
   for (struct list_elem* e = list_begin(&t->gotten_prio_list);
        e != list_end(&t->gotten_prio_list);) {
@@ -412,11 +411,10 @@ void cond_signal(struct condition* cond, struct lock* lock UNUSED) {
   if (!list_empty(&cond->waiters)) {
     struct semaphore* max_sema = NULL;
     struct list_elem* max_e = NULL;
-    if (active_sched_policy == SCHED_PRIO)
-    {
+    if (active_sched_policy == SCHED_PRIO) {
       int64_t p_max;
       for (struct list_elem* e = list_begin(&cond->waiters); e != list_end(&cond->waiters);
-          e = list_next(e)) {
+           e = list_next(e)) {
         struct semaphore* s = &list_entry(e, struct semaphore_elem, elem)->semaphore;
         ASSERT(list_size(&s->waiters) == 1);
         struct thread* t = list_entry(list_front(&s->waiters), struct thread, elem);
@@ -426,8 +424,7 @@ void cond_signal(struct condition* cond, struct lock* lock UNUSED) {
           max_e = e;
         }
       }
-    }
-    else /*if(active_sched_policy == SCHED_FIFO)*/ {
+    } else /*if(active_sched_policy == SCHED_FIFO)*/ {
       max_e = list_begin(&cond->waiters);
       max_sema = &list_entry(max_e, struct semaphore_elem, elem)->semaphore;
     }

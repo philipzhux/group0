@@ -94,12 +94,13 @@ struct thread {
   /* Shared between thread.c and synch.c and timer.c. */
   struct list_elem elem; /* List element for scheduling. */
 
-  int64_t eff_priority;        // Effective priority.
-  struct list gotten_prio_list;// List of received donate_pairs from donated priorities.
-  struct lock* waiting_lock;   // Lock that this thread is currently waiting on. Is NULL when not waiting on lock.
+  int64_t eff_priority;         // Effective priority.
+  struct list gotten_prio_list; // List of received donate_pairs from donated priorities.
+  struct lock*
+      waiting_lock; // Lock that this thread is currently waiting on. Is NULL when not waiting on lock.
 
   struct list_elem proc_thread_list_elem; /* List element on the process's thread_list. */
-  struct join_status* join_status; // pointer to its own join status
+  struct join_status* join_status;        // pointer to its own join status
 
   void* saved_upage; // save ptr to user stack for freeing in pthread_exit
   bool is_exiting;

@@ -150,7 +150,7 @@ void thread_tick(int64_t cur_tick) {
 #endif
   else
     kernel_ticks++;
-  
+
   // check for timer expiration
   while (!list_empty(&timer_wait_list)) {
     struct list_elem* e = list_front(&timer_wait_list);
@@ -374,8 +374,7 @@ void thread_set_priority(int new_priority) {
 
   struct thread* t = thread_current();
   t->priority = new_priority;
-  if(list_empty(&t->gotten_prio_list) || t->eff_priority < new_priority)
-  {
+  if (list_empty(&t->gotten_prio_list) || t->eff_priority < new_priority) {
     // if no donations or new base priority is higher than current,
     // set effective priority to new value
     t->eff_priority = new_priority;

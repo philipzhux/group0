@@ -681,7 +681,7 @@ void release_proc_status(proc_status_t* status, bool parent) {
    function signature. */
 bool setup_thread(void (**eip)(void), void** esp, thread_init_t* args) {
   struct thread* t = thread_current();
-  
+
   // set eip
   *eip = (void*)(args->sf);
 
@@ -692,8 +692,7 @@ bool setup_thread(void (**eip)(void), void** esp, thread_init_t* args) {
   if (kpage != NULL) {
     void* addr = PHYS_BASE - PGSIZE;
     while (pagedir_get_page(t->pcb->pagedir, (uint32_t*)addr)) {
-      if(addr == 0)
-      {
+      if (addr == 0) {
         palloc_free_page(kpage);
         return false;
       }
@@ -725,7 +724,7 @@ bool setup_thread(void (**eip)(void), void** esp, thread_init_t* args) {
     } else
       palloc_free_page(kpage);
   }
-  
+
   return success;
 }
 
@@ -740,8 +739,7 @@ bool setup_thread(void (**eip)(void), void** esp, thread_init_t* args) {
    */
 tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
   struct process* pcb = thread_current()->pcb;
-  thread_init_t* start_pthread_args =
-      malloc(sizeof(thread_init_t));
+  thread_init_t* start_pthread_args = malloc(sizeof(thread_init_t));
   start_pthread_args->sf = sf;
   start_pthread_args->tf = tf;
   start_pthread_args->arg = arg;
@@ -749,20 +747,19 @@ tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
   start_pthread_args->join_status = malloc(sizeof(join_status_t));
 
   // init join status
-  join_status_t * status = start_pthread_args->join_status;
+  join_status_t* status = start_pthread_args->join_status;
   sema_init(&status->join_sema, 0);
   status->was_joined = false;
 
   // set name of thread
   char name[16];
   snprintf(name, 15, "%p", tf);
-  
+
   thread_create(name, PRI_DEFAULT, start_pthread, start_pthread_args);
   sema_down(&status->join_sema);
 
   // handle join_status based on result
-  if(status->tid == TID_ERROR)
-  {
+  if (status->tid == TID_ERROR) {
     free(status);
     return TID_ERROR;
   } else {
@@ -792,15 +789,13 @@ static void start_pthread(void* args_) {
 
   bool success = setup_thread(&if_.eip, &if_.esp, args);
 
-  join_status_t * status = args->join_status;
+  join_status_t* status = args->join_status;
   free(args);
   if (!success) {
     status->tid = TID_ERROR;
     sema_up(&status->join_sema);
     thread_exit(); // does not return
-  }
-  else
-  {
+  } else {
     status->tid = t->tid;
     sema_up(&status->join_sema);
   }
@@ -823,14 +818,15 @@ static void start_pthread(void* args_) {
 
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
-tid_t pthread_join(tid_t tid) { 
-  
-  struct thread * t = thread_current();
-  join_status_t * status = NULL;
+tid_t pthread_join(tid_t tid) {
+
+  struct thread* t = thread_current();
+  join_status_t* status = NULL;
   lock_acquire(&t->pcb->master_lock);
 
-  for (struct list_elem * e = list_begin(&t->pcb->join_status_list); e != list_end(&t->pcb->join_status_list); e = list_next(e)) {
-    struct join_status * tmp = list_entry(e, struct join_status, elem);
+  for (struct list_elem* e = list_begin(&t->pcb->join_status_list);
+       e != list_end(&t->pcb->join_status_list); e = list_next(e)) {
+    struct join_status* tmp = list_entry(e, struct join_status, elem);
     if (tmp->tid == tid) {
       status = tmp;
     }
@@ -851,7 +847,6 @@ tid_t pthread_join(tid_t tid) {
   return tid;
 }
 
-
 /* Free the current thread's resources. Most resources will
    be freed on thread_exit(), so all we have to do is deallocate the
    thread's userspace stack. Wake any waiters on this thread.
@@ -862,14 +857,14 @@ tid_t pthread_join(tid_t tid) {
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
 void pthread_exit(void) {
-  struct thread * t = thread_current();
-  join_status_t * status = t->join_status;
+  struct thread* t = thread_current();
+  join_status_t* status = t->join_status;
 
   // free user stack
-  void * kpage = pagedir_get_page(t->pcb->pagedir, t->saved_upage);
+  void* kpage = pagedir_get_page(t->pcb->pagedir, t->saved_upage);
   palloc_free_page(kpage);
   pagedir_clear_page(t->pcb->pagedir, t->saved_upage); // clear page table entry
-   
+
   lock_acquire(&t->pcb->master_lock);
   list_remove(&t->proc_thread_list_elem);
   // wake up thread that has joined on this
@@ -880,7 +875,7 @@ void pthread_exit(void) {
     cond_signal(&t->pcb->exit_cond_var, &t->pcb->master_lock);
   }
   lock_release(&t->pcb->master_lock);
-  
+
   thread_exit();
 }
 
@@ -894,15 +889,16 @@ void pthread_exit(void) {
    now, it does nothing. */
 void pthread_exit_main(void) {
   // wake up thread that has joined on this
-  struct thread * t = thread_current();
+  struct thread* t = thread_current();
   struct join_status* status = t->join_status;
   sema_up(&status->join_sema);
 
   lock_acquire(&t->pcb->master_lock);
-  
-  while(!list_empty(&t->pcb->join_status_list)) {
-    for (struct list_elem *e = list_begin(&t->pcb->join_status_list);  e != list_end(&t->pcb->join_status_list); e = list_next(e)) {
-      struct join_status *tmp = list_entry(e, struct join_status, elem);
+
+  while (!list_empty(&t->pcb->join_status_list)) {
+    for (struct list_elem* e = list_begin(&t->pcb->join_status_list);
+         e != list_end(&t->pcb->join_status_list); e = list_next(e)) {
+      struct join_status* tmp = list_entry(e, struct join_status, elem);
       if (!tmp->was_joined && tmp->tid != t->tid) {
         tmp->was_joined = true;
         list_remove(e);
@@ -914,6 +910,6 @@ void pthread_exit_main(void) {
     }
   }
   lock_release(&t->pcb->master_lock);
-  
+
   process_exit(0);
 }

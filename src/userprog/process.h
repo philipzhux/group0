@@ -53,29 +53,32 @@ struct process {
 
   struct list thread_list;
   int stack_page_cnt;
-  struct lock master_lock;     /* Lock used for thread_list, file_desc_list, user locks and semaphores list */
-  struct list join_status_list;  // list of join_statuses for threads in this process; only holds unfinished or unjoined threads
-  struct condition exit_cond_var; // 
+  struct lock
+      master_lock; /* Lock used for thread_list, file_desc_list, user locks and semaphores list */
+  struct list
+      join_status_list; // list of join_statuses for threads in this process; only holds unfinished or unjoined threads
+  struct condition exit_cond_var; //
 };
 
 typedef struct join_status {
-  tid_t tid;                   // tid of thread; set by start_pthread to TID_ERROR if thread failed to start
-  bool was_joined;             // true if a thread has called pthread_join on this thread
-  struct semaphore join_sema;  // semaphore for waiting on thread to start (in pthread_execute), and waiting on thread to finish (in pthread_join)
-  struct list_elem elem;       // list construct
+  tid_t tid;       // tid of thread; set by start_pthread to TID_ERROR if thread failed to start
+  bool was_joined; // true if a thread has called pthread_join on this thread
+  struct semaphore
+      join_sema; // semaphore for waiting on thread to start (in pthread_execute), and waiting on thread to finish (in pthread_join)
+  struct list_elem elem; // list construct
 } join_status_t;
 
 typedef struct thread_init {
   // used by process_execute
-  char* file_name;                  // file name of program running
-  proc_status_t * status_ptr;       // pointer to process status of starting process
+  char* file_name;           // file name of program running
+  proc_status_t* status_ptr; // pointer to process status of starting process
 
   // userd for pthread_execute, start_pthread, pthread_join,
-  stub_fun sf;                      // stub function for starting thread
-  pthread_fun tf;                   // function to run for starting thread
-  void* arg;                        // args passed by user for starting thread
-  struct process* pcb;              // pointer to pcb
-  join_status_t * join_status;      // pointer to join status of starting thread
+  stub_fun sf;                // stub function for starting thread
+  pthread_fun tf;             // function to run for starting thread
+  void* arg;                  // args passed by user for starting thread
+  struct process* pcb;        // pointer to pcb
+  join_status_t* join_status; // pointer to join status of starting thread
 } thread_init_t;
 
 void userprog_init(void);
