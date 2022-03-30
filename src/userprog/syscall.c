@@ -243,6 +243,11 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
   } else if (args[0] == SYS_PT_EXIT) {
     struct thread *t = thread_current();
+    if (t->pcb->main_thread == t) {
+      pthread_exit_main();
+    } else {
+      pthread_exit();
+    }
   }
 }
 
