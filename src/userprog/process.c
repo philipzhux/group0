@@ -39,7 +39,6 @@ void userprog_init(void) {
      page directory) when t->pcb is assigned, because a timer interrupt
      can come at any time and activate our pagedir */
   t->pcb = calloc(sizeof(struct process), 1);
-  t->pcb->is_exiting = false;
   success = t->pcb != NULL;
 
   /* Kill the kernel if we did not succeed */
@@ -120,7 +119,6 @@ static void start_process(void* attr_) {
 
   /* Allocate process control block */
   struct process* new_pcb = malloc(sizeof(struct process));
-  new_pcb->is_exiting = false;
   success = pcb_success = new_pcb != NULL;
 
   /* Initialize process control block */
@@ -161,7 +159,6 @@ static void start_process(void* attr_) {
     t->pcb->own_status = attr->status_ptr;
     t->pcb->child_status_list = (struct list*)malloc(sizeof(struct list));
     t->pcb->file_desc_list = (struct list*)malloc(sizeof(struct list));
-    t->pcb->is_exiting = false;
     list_init(t->pcb->child_status_list);
     list_init(t->pcb->file_desc_list);
     list_init(&(t->pcb->thread_list));
@@ -171,6 +168,7 @@ static void start_process(void* attr_) {
     cond_init(&t->pcb->exit_cond_var);
     lock_init(&t->pcb->master_lock);
 
+    t->is_exiting = false;
     // allocate and initialize a join_status for the main thread
     join_status_t* main_status = malloc(sizeof(join_status_t));
     sema_init(&main_status->join_sema, 0);
@@ -245,12 +243,12 @@ void process_exit(int status) {
   
   // check that no other thread has already called process_exit
   lock_acquire(&cur->pcb->master_lock);
-  if (cur->pcb->is_exiting) {
+  if (cur->is_exiting) {
     lock_release(&cur->pcb->master_lock);
     pthread_exit();
     NOT_REACHED();
   }
-  cur->pcb->is_exiting = true;
+  // cur->pcb->is_exiting = true;
   // wait on all other threads to die
   while(list_size(&cur->pcb->thread_list) > 1) {
     cond_wait(&cur->pcb->exit_cond_var, &cur->pcb->master_lock);

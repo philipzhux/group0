@@ -103,6 +103,7 @@ struct thread {
   struct join_status* join_status;        // pointer to its own join status
 
   void* saved_upage; // save ptr to user stack for freeing in pthread_exit
+  bool is_exiting; // is the process currently exiting?
 
 #ifdef USERPROG
   /* Owned by process.c. */

@@ -58,7 +58,6 @@ struct process {
   struct list
       join_status_list; // list of join_statuses for threads in this process; only holds unfinished or unjoined threads
   struct condition exit_cond_var; // condition variable for killing threads on process exit
-  bool is_exiting; // is the process currently exiting?
 };
 
 typedef struct join_status {

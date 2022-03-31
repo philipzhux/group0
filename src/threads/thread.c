@@ -486,6 +486,7 @@ static void init_thread(struct thread* t, const char* name, int priority) {
   t->stack = (uint8_t*)t + PGSIZE;
   t->priority = priority;
   t->eff_priority = priority;
+  t->is_exiting = false;
   list_init(&t->gotten_prio_list);
   t->waiting_lock = NULL;
   t->pcb = NULL;
