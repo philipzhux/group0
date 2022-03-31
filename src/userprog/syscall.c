@@ -248,6 +248,9 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     } else {
       pthread_exit();
     }
+  } else if (args[0] == SYS_GET_TID) {
+    struct thread* t = thread_current();
+    f->eax = t->tid;
   }
 }
 

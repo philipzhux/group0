@@ -51,6 +51,12 @@ void userprog_init(void) {
   list_init(&t->pcb->join_status_list);
   lock_init(&t->pcb->master_lock);
   cond_init(&t->pcb->exit_cond_var);
+  join_status_t* main_status = malloc(sizeof(join_status_t));
+  sema_init(&main_status->join_sema, 0);
+  main_status->was_joined = false;
+  main_status->tid = t->tid;
+  t->join_status = main_status;
+  list_push_front(&t->pcb->join_status_list, &main_status->elem);
 }
 
 /* Starts a new thread running a user program loaded from
@@ -756,7 +762,7 @@ tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
   char name[16];
   snprintf(name, 15, "%p", tf);
 
-  thread_create(name, PRI_DEFAULT, start_pthread, start_pthread_args);
+  status->tid = thread_create(name, PRI_DEFAULT, start_pthread, start_pthread_args);
   sema_down(&status->join_sema);
 
   // handle join_status based on result
@@ -893,10 +899,13 @@ void pthread_exit_main(void) {
   struct thread* t = thread_current();
   struct join_status* status = t->join_status;
   sema_up(&status->join_sema);
-
   lock_acquire(&t->pcb->master_lock);
   
-  while(list_size(&t->pcb->join_status_list) > 1) {
+  while(list_size(&t->pcb->join_status_list) > 0) {
+    if (list_size(&t->pcb->join_status_list) == 1) {
+      struct join_status *temp = list_entry(list_begin(&t->pcb->join_status_list), struct join_status, elem);
+      if(temp->was_joined || temp->tid == t->tid) break;
+    }
     for (struct list_elem *e = list_begin(&t->pcb->join_status_list);  e != list_end(&t->pcb->join_status_list); e = list_next(e)) {
       struct join_status *tmp = list_entry(e, struct join_status, elem);
       if (!tmp->was_joined && tmp->tid != t->tid) {
@@ -910,6 +919,5 @@ void pthread_exit_main(void) {
     }
   }
   lock_release(&t->pcb->master_lock);
-
   process_exit(0);
 }
