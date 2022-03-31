@@ -9,6 +9,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "devices/timer.h"
+#include "userprog/process.h"
 #ifdef USERPROG
 #include "userprog/gdt.h"
 #endif
@@ -351,9 +352,13 @@ void intr_handler(struct intr_frame* frame) {
 
     in_external_intr = false;
     pic_end_of_interrupt(frame->vec_no);
-
-    if (yield_on_return)
-      thread_yield();
+  }
+  struct thread* cur = thread_current();
+  if (cur->pcb->is_exiting) {
+    pthread_exit();  
+  }
+  if (external && yield_on_return) {
+    thread_yield();
   }
 }
 

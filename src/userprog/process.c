@@ -39,6 +39,7 @@ void userprog_init(void) {
      page directory) when t->pcb is assigned, because a timer interrupt
      can come at any time and activate our pagedir */
   t->pcb = calloc(sizeof(struct process), 1);
+  t->pcb->is_exiting = false;
   success = t->pcb != NULL;
 
   /* Kill the kernel if we did not succeed */
@@ -119,6 +120,7 @@ static void start_process(void* attr_) {
 
   /* Allocate process control block */
   struct process* new_pcb = malloc(sizeof(struct process));
+  new_pcb->is_exiting = false;
   success = pcb_success = new_pcb != NULL;
 
   /* Initialize process control block */
@@ -159,6 +161,7 @@ static void start_process(void* attr_) {
     t->pcb->own_status = attr->status_ptr;
     t->pcb->child_status_list = (struct list*)malloc(sizeof(struct list));
     t->pcb->file_desc_list = (struct list*)malloc(sizeof(struct list));
+    t->pcb->is_exiting = false;
     list_init(t->pcb->child_status_list);
     list_init(t->pcb->file_desc_list);
     list_init(&(t->pcb->thread_list));
@@ -236,11 +239,31 @@ void process_exit(int status) {
     thread_exit();
     NOT_REACHED();
   }
+  
+  // check that no other thread has already called process_exit
+  lock_acquire(&cur->pcb->master_lock);
+  if (cur->pcb->is_exiting) {
+    lock_release(&cur->pcb->master_lock);
+    pthread_exit();
+    NOT_REACHED();
+  }
+  cur->pcb->is_exiting = true;
+  // wait on all other threads to die
+  while(list_size(&cur->pcb->thread_list) > 1) {
+    cond_wait(&cur->pcb->exit_cond_var, &cur->pcb->master_lock);
+  }
+  lock_release(&cur->pcb->master_lock);
+  
+  // free the join status list
+  while (!list_empty(&cur->pcb->join_status_list)) {
+    struct join_status * status = list_entry(list_pop_front(&cur->pcb->join_status_list), struct join_status, elem);
+    free(status);
+  }
 
   // clean up child_status_list
   struct list* child_list = cur->pcb->child_status_list;
-  for (struct list_elem* e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
-    proc_status_t* status = list_entry(e, proc_status_t, elem);
+  while (!list_empty(child_list)) {
+    struct proc_status * status = list_entry(list_pop_front(child_list), struct proc_status, elem);
     release_proc_status(status, true);
   }
   free(child_list);
@@ -762,7 +785,7 @@ tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
   char name[16];
   snprintf(name, 15, "%p", tf);
 
-  status->tid = thread_create(name, PRI_DEFAULT, start_pthread, start_pthread_args);
+  thread_create(name, PRI_DEFAULT, start_pthread, start_pthread_args);
   sema_down(&status->join_sema);
 
   // handle join_status based on result
