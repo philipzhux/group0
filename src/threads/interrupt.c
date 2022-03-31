@@ -354,7 +354,7 @@ void intr_handler(struct intr_frame* frame) {
     pic_end_of_interrupt(frame->vec_no);
   }
   struct thread* cur = thread_current();
-  if (cur->pcb->is_exiting) {
+  if (cur->pcb != NULL && cur->pcb->is_exiting) {
     pthread_exit();  
   }
   if (external && yield_on_return) {
