@@ -249,7 +249,6 @@ void process_exit(int status) {
     NOT_REACHED();
   }
 
-  sema_up(&cur->join_status->join_sema);
   // wait on all other threads to die
   while(list_size(&cur->pcb->thread_list) > 1) {
     cond_wait(&cur->pcb->exit_cond_var, &cur->pcb->master_lock);
