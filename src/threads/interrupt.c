@@ -355,11 +355,13 @@ void intr_handler(struct intr_frame* frame) {
   }
   struct thread* cur = thread_current();
   if (cur->pcb != NULL && cur->pcb->is_exiting) {
-    pthread_exit();  
+    pthread_exit();
   }
   if (external && yield_on_return) {
     thread_yield();
   }
+
+
 }
 
 /* Handles an unexpected interrupt with interrupt frame F.  An

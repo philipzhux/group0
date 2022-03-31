@@ -898,9 +898,11 @@ void pthread_exit(void) {
   lock_acquire(&t->pcb->master_lock);
   list_remove(&t->proc_thread_list_elem);
   // wake up thread that has joined on this
+  lock_release(&t->pcb->master_lock);
   sema_up(&status->join_sema);
 
   // wake up main thread if it is exiting
+  lock_acquire(&t->pcb->master_lock);
   if (list_size(&t->pcb->thread_list) == 1) {
     cond_signal(&t->pcb->exit_cond_var, &t->pcb->master_lock);
   }
