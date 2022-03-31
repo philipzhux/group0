@@ -178,6 +178,9 @@ static void start_process(void* attr_) {
     main_status->tid = t->tid;
     t->join_status = main_status;
     list_push_front(&t->pcb->join_status_list, &main_status->elem);
+
+    // put main thread onto thread_list
+    list_push_front(&t->pcb->thread_list, &t->proc_thread_list_elem);
   }
 
   sema_up(&(attr->status_ptr->wait_sema));
