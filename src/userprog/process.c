@@ -166,6 +166,7 @@ static void start_process(void* attr_) {
     join_status_t* main_status = malloc(sizeof(join_status_t));
     sema_init(&main_status->join_sema, 0);
     main_status->was_joined = false;
+    main_status->tid = t->tid;
     t->join_status = main_status;
     list_push_front(&t->pcb->join_status_list, &main_status->elem);
   }
