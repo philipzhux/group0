@@ -249,13 +249,6 @@ void process_exit(int status) {
     NOT_REACHED();
   }
 
-  struct list * lst = &cur->pcb->thread_list;
-  for (struct list_elem * e = list_begin(lst); e != list_end(lst); e = list_next(e)) {
-    struct thread * t = list_entry(e, struct thread, proc_thread_list_elem);
-    if(t->tid != cur->tid) {
-      t->is_exiting = true;
-    }
-  }
   sema_up(&cur->join_status->join_sema);
   // wait on all other threads to die
   while(list_size(&cur->pcb->thread_list) > 1) {
@@ -954,10 +947,6 @@ void pthread_exit_main(void) {
       }
     }
   }
-  if (list_size(&t->pcb->thread_list) == 2) {
-    cond_signal(&t->pcb->exit_cond_var, &t->pcb->master_lock);
-  }
-
   lock_release(&t->pcb->master_lock);
   process_exit(0);
 }
