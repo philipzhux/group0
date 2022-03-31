@@ -248,7 +248,15 @@ void process_exit(int status) {
     pthread_exit();
     NOT_REACHED();
   }
-  // cur->pcb->is_exiting = true;
+
+  struct list * lst = &cur->pcb->thread_list;
+  for (struct list_elem * e = list_begin(lst); e != list_end(lst); e = list_next(e)) {
+    struct thread * t = list_entry(e, struct thread, proc_thread_list_elem);
+    if(t->tid != cur->tid) {
+      t->is_exiting = true;
+    }
+  }
+  sema_up(&cur->join_status->join_sema);
   // wait on all other threads to die
   while(list_size(&cur->pcb->thread_list) > 1) {
     cond_wait(&cur->pcb->exit_cond_var, &cur->pcb->master_lock);
@@ -902,7 +910,7 @@ void pthread_exit(void) {
   lock_release(&t->pcb->master_lock);
   sema_up(&status->join_sema);
 
-  // wake up main thread if it is exiting
+  // wake up thread if it is exiting process
   lock_acquire(&t->pcb->master_lock);
   if (list_size(&t->pcb->thread_list) == 1) {
     cond_signal(&t->pcb->exit_cond_var, &t->pcb->master_lock);
@@ -925,6 +933,8 @@ void pthread_exit_main(void) {
   struct thread* t = thread_current();
   struct join_status* status = t->join_status;
   sema_up(&status->join_sema);
+
+  // wake up thread if it is exiting process
   lock_acquire(&t->pcb->master_lock);
   
   while(list_size(&t->pcb->join_status_list) > 0) {
@@ -944,6 +954,10 @@ void pthread_exit_main(void) {
       }
     }
   }
+  if (list_size(&t->pcb->thread_list) == 2) {
+    cond_signal(&t->pcb->exit_cond_var, &t->pcb->master_lock);
+  }
+
   lock_release(&t->pcb->master_lock);
   process_exit(0);
 }
